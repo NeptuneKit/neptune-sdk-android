@@ -5,7 +5,13 @@ import com.neptunekit.sdk.android.model.IngestLogRecord
 import com.neptunekit.sdk.android.model.LogLevel
 import com.neptunekit.sdk.android.model.Platform
 import com.fasterxml.jackson.databind.ObjectMapper
-import fi.iki.elonen.NanoHTTPD.Response.Status
+import java.time.Duration
+import java.net.ServerSocket
+import java.net.URI
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -15,6 +21,8 @@ class ExportHttpServerTest {
     private val service = ExportService()
     private val router = ExportHttpRouter(service)
     private val mapper = ObjectMapper()
+    private var server: ExportHttpServer? = null
+    private val httpClient = HttpClient.newHttpClient()
 
     @Test
     fun parsesCursorAndLimitQueryParameters() {
@@ -46,7 +54,7 @@ class ExportHttpServerTest {
     fun healthEndpointReturnsStructuredJson() {
         val response = router.handle("GET", "/v2/export/health", emptyMap())
 
-        assertEquals(Status.OK, response.status)
+        assertEquals(200, response.statusCode)
 
         val payload = mapper.readTree(response.body)
         assertTrue(payload["ok"]!!.asBoolean())
@@ -64,7 +72,7 @@ class ExportHttpServerTest {
             parameters = mapOf("cursor" to listOf("0"), "limit" to listOf("10")),
         )
 
-        assertEquals(Status.OK, response.status)
+        assertEquals(200, response.statusCode)
         assertTrue(response.body.contains("\\\"quoted\\\""))
         assertTrue(response.body.contains("\\nline"))
 
@@ -84,7 +92,7 @@ class ExportHttpServerTest {
     fun metricsEndpointReturnsStructuredJson() {
         val response = router.handle("GET", "/v2/export/metrics", emptyMap())
 
-        assertEquals(Status.OK, response.status)
+        assertEquals(200, response.statusCode)
 
         val payload = mapper.readTree(response.body)
         assertEquals(0, payload["queuedRecords"]!!.asInt())
@@ -95,12 +103,51 @@ class ExportHttpServerTest {
     fun unsupportedMethodReturnsJsonError() {
         val response = router.handle("POST", "/v2/export/health", emptyMap())
 
-        assertEquals(Status.METHOD_NOT_ALLOWED, response.status)
+        assertEquals(405, response.statusCode)
 
         val payload = mapper.readTree(response.body)
         assertFalse(payload["ok"]!!.asBoolean())
         assertEquals("method_not_allowed", payload["error"]!!["code"]!!.asText())
         assertEquals("Only GET is supported.", payload["error"]!!["message"]!!.asText())
+    }
+
+    @Test
+    fun embeddedServerServesHealthEndpointOverHttp() {
+        val port = findAvailablePort()
+        val server = ExportHttpServer(service)
+        this.server = server
+        server.start(port)
+
+        val response = eventuallyRequest("GET", port, "/v2/export/health")
+
+        assertEquals(200, response.statusCode())
+        assertTrue(response.headers().firstValue("content-type").orElse("").contains("application/json"))
+
+        val payload = mapper.readTree(response.body())
+        assertTrue(payload["ok"]!!.asBoolean())
+        assertEquals(2_000, payload["queueCapacity"]!!.asInt())
+    }
+
+    @Test
+    fun embeddedServerPreservesJsonErrorForUnsupportedMethod() {
+        val port = findAvailablePort()
+        val server = ExportHttpServer(service)
+        this.server = server
+        server.start(port)
+
+        val response = eventuallyRequest("POST", port, "/v2/export/health")
+
+        assertEquals(405, response.statusCode())
+
+        val payload = mapper.readTree(response.body())
+        assertFalse(payload["ok"]!!.asBoolean())
+        assertEquals("method_not_allowed", payload["error"]!!["code"]!!.asText())
+    }
+
+    @AfterTest
+    fun tearDown() {
+        server?.stop()
+        server = null
     }
 
     private fun sampleRecord(): IngestLogRecord =
@@ -119,4 +166,32 @@ class ExportHttpServerTest {
             ),
             source = null,
         )
+
+    private fun eventuallyRequest(method: String, port: Int, path: String): HttpResponse<String> {
+        repeat(20) { attempt ->
+            try {
+                return request(method = method, port = port, path = path)
+            } catch (error: Exception) {
+                if (attempt == 19) {
+                    throw error
+                }
+                Thread.sleep(50)
+            }
+        }
+
+        error("unreachable")
+    }
+
+    private fun request(method: String, port: Int, path: String): HttpResponse<String> {
+        val request = HttpRequest.newBuilder()
+            .uri(URI("http://127.0.0.1:$port$path"))
+            .method(method, HttpRequest.BodyPublishers.noBody())
+            .timeout(Duration.ofSeconds(5))
+            .build()
+
+        return httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+    }
+
+    private fun findAvailablePort(): Int =
+        ServerSocket(0).use { it.localPort }
 }

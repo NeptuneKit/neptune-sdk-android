@@ -5,7 +5,7 @@ NeptuneKit v2 Android SDK skeleton.
 ## Scope
 - In-memory log queue with stable cursor pagination.
 - v2 ingest model aligned with the cross-platform contracts.
-- Local HTTP export server for `GET /v2/export/health`, `GET /v2/export/metrics`, and `GET /v2/export/logs`.
+- Local HTTP export server backed by Ktor CIO for `GET /v2/export/health`, `GET /v2/export/metrics`, and `GET /v2/export/logs`.
 - JVM tests for overflow and pagination behavior.
 
 ## Layout
@@ -16,6 +16,8 @@ NeptuneKit v2 Android SDK skeleton.
 - `sdk/src/test/kotlin/...`: JVM tests.
 
 ## HTTP export server
+
+The embedded export server now runs on Ktor Server with the official CIO engine. Route contract and JSON payloads remain unchanged.
 
 ```kotlin
 import com.neptunekit.sdk.android.createExportHttpServer
@@ -33,3 +35,4 @@ server.stop()
 ## Development
 - `./gradlew test` downloads a local Gradle distribution on first use if Gradle is not installed.
 - JDK 17 is required.
+- See `docs-linhay/dev/mature-library-audit.md` for the HTTP engine migration decision record.

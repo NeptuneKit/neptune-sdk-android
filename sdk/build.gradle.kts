@@ -14,7 +14,10 @@ kotlin {
 }
 
 dependencies {
-    implementation("org.nanohttpd:nanohttpd:2.3.1")
+    val ktorVersion = "2.3.12"
+
+    implementation("io.ktor:ktor-server-core-jvm:$ktorVersion")
+    implementation("io.ktor:ktor-server-cio-jvm:$ktorVersion")
     implementation("com.fasterxml.jackson.core:jackson-databind:2.17.2")
     testImplementation(kotlin("test"))
 }

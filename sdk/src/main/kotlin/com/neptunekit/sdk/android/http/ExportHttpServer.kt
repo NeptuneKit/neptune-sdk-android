@@ -8,14 +8,28 @@ import com.neptunekit.sdk.android.model.ExportLogRecord
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.node.JsonNodeFactory
 import com.fasterxml.jackson.databind.node.ObjectNode
-import fi.iki.elonen.NanoHTTPD
-import fi.iki.elonen.NanoHTTPD.Response.Status
+import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.withCharset
+import io.ktor.server.application.Application
+import io.ktor.server.application.call
+import io.ktor.server.cio.CIO
+import io.ktor.server.engine.ApplicationEngine
+import io.ktor.server.engine.embeddedServer
+import io.ktor.server.request.httpMethod
+import io.ktor.server.request.path
+import io.ktor.server.response.respondText
+import io.ktor.util.pipeline.PipelinePhase
 
 private const val DEFAULT_HOST = "127.0.0.1"
-private const val JSON_CONTENT_TYPE = "application/json; charset=utf-8"
 private const val MAX_LIMIT = 1_000
+private const val HTTP_STATUS_OK = 200
+private const val HTTP_STATUS_NOT_FOUND = 404
+private const val HTTP_STATUS_METHOD_NOT_ALLOWED = 405
 
 private val jsonMapper = ObjectMapper()
+private val jsonContentType = ContentType.Application.Json.withCharset(Charsets.UTF_8)
+private val exportCallPhase = PipelinePhase("ExportHttpRouter")
 
 data class ExportQueryParameters(
     val cursor: Long?,
@@ -23,7 +37,7 @@ data class ExportQueryParameters(
 )
 
 data class ExportHttpResult(
-    val status: Status,
+    val statusCode: Int,
     val body: String,
 )
 
@@ -32,7 +46,7 @@ class ExportHttpServer(
     private val host: String = DEFAULT_HOST,
 ) {
     private val router = ExportHttpRouter(service)
-    private var server: EmbeddedServer? = null
+    private var server: ApplicationEngine? = null
 
     @Synchronized
     fun start(port: Int) {
@@ -40,14 +54,20 @@ class ExportHttpServer(
             return
         }
 
-        val embedded = EmbeddedServer(host, port, router)
-        embedded.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
+        val embedded = embeddedServer(
+            factory = CIO,
+            port = port,
+            host = host,
+        ) {
+            exportHttpModule(router)
+        }
+        embedded.start(wait = false)
         server = embedded
     }
 
     @Synchronized
     fun stop() {
-        server?.stop()
+        server?.stop(gracePeriodMillis = 0, timeoutMillis = 0)
         server = null
     }
 }
@@ -59,7 +79,7 @@ internal class ExportHttpRouter(
         when (method.uppercase()) {
             "GET" -> handleGet(path = path, parameters = parameters)
             else -> jsonError(
-                status = Status.METHOD_NOT_ALLOWED,
+                statusCode = HTTP_STATUS_METHOD_NOT_ALLOWED,
                 code = "method_not_allowed",
                 message = "Only GET is supported.",
             )
@@ -75,25 +95,27 @@ internal class ExportHttpRouter(
             }
 
             else -> jsonError(
-                status = Status.NOT_FOUND,
+                statusCode = HTTP_STATUS_NOT_FOUND,
                 code = "not_found",
                 message = "Unknown export endpoint.",
             )
         }
 }
 
-internal class EmbeddedServer(
-    host: String,
-    port: Int,
-    private val router: ExportHttpRouter,
-) : NanoHTTPD(host, port) {
-    override fun serve(session: IHTTPSession): Response {
+internal fun Application.exportHttpModule(router: ExportHttpRouter) {
+    insertPhaseAfter(io.ktor.server.application.ApplicationCallPipeline.Plugins, exportCallPhase)
+    intercept(exportCallPhase) {
         val result = router.handle(
-            method = session.method.name,
-            path = session.uri,
-            parameters = session.parameters,
+            method = call.request.httpMethod.value,
+            path = call.request.path(),
+            parameters = call.request.queryParameters.toListMap(),
         )
-        return newFixedLengthResponse(result.status, JSON_CONTENT_TYPE, result.body)
+        call.respondText(
+            text = result.body,
+            contentType = jsonContentType,
+            status = HttpStatusCode.fromValue(result.statusCode),
+        )
+        finish()
     }
 }
 
@@ -112,11 +134,11 @@ internal fun parseExportQueryParameters(parameters: Map<String, List<String>>): 
 }
 
 private fun jsonOk(body: String): ExportHttpResult =
-    ExportHttpResult(status = Status.OK, body = body)
+    ExportHttpResult(statusCode = HTTP_STATUS_OK, body = body)
 
-private fun jsonError(status: Status, code: String, message: String): ExportHttpResult =
+private fun jsonError(statusCode: Int, code: String, message: String): ExportHttpResult =
     ExportHttpResult(
-        status = status,
+        statusCode = statusCode,
         body = jsonMapper.writeValueAsString(
             objectNode().apply {
                 put("ok", false)
@@ -199,6 +221,9 @@ private fun Map<String, String>.recordAttributesSorted(): List<Map.Entry<String,
 
 private fun Map<String, List<String>>.firstValue(key: String): String? =
     this[key]?.firstOrNull()
+
+private fun io.ktor.http.Parameters.toListMap(): Map<String, List<String>> =
+    names().associateWith { name -> getAll(name).orEmpty() }
 
 private fun objectNode(): ObjectNode =
     JsonNodeFactory.instance.objectNode()
