@@ -14,6 +14,7 @@ kotlin {
 }
 
 dependencies {
+    implementation("org.nanohttpd:nanohttpd:2.3.1")
     testImplementation(kotlin("test"))
 }
 
