@@ -4,10 +4,11 @@ import com.neptunekit.sdk.android.core.DEFAULT_PAGE_LIMIT
 import com.neptunekit.sdk.android.core.LogPage
 import com.neptunekit.sdk.android.core.LogQueue
 import com.neptunekit.sdk.android.model.IngestLogRecord
+import java.io.Closeable
 
 class ExportService(
     private val queue: LogQueue = LogQueue(),
-) {
+) : Closeable {
     fun ingest(record: IngestLogRecord): Long = queue.enqueue(record)
 
     fun logs(cursor: Long? = null, limit: Int = DEFAULT_PAGE_LIMIT): LogPage =
@@ -25,6 +26,10 @@ class ExportService(
             queueCapacity = queue.capacity,
             queueSize = queue.size,
         )
+
+    override fun close() {
+        queue.close()
+    }
 }
 
 data class ExportMetrics(

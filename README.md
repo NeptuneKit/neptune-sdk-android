@@ -3,16 +3,18 @@
 NeptuneKit v2 Android SDK skeleton.
 
 ## Scope
-- In-memory log queue with stable cursor pagination.
+- Log queue with stable cursor pagination and optional SQLite persistence.
 - v2 ingest model aligned with the cross-platform contracts.
 - Local HTTP export server backed by Ktor CIO for `GET /v2/export/health`, `GET /v2/export/metrics`, and `GET /v2/export/logs`.
-- JVM tests for overflow and pagination behavior.
+- JVM tests for overflow, pagination, and persistence behavior.
 
 ## Layout
 - `sdk/src/main/kotlin/.../model`: shared log models.
-- `sdk/src/main/kotlin/.../core`: in-memory queue.
+- `sdk/src/main/kotlin/.../core`: queue facade and storage abstraction.
+- `sdk/src/main/kotlin/.../storage`: SQLite persistence implementation.
 - `sdk/src/main/kotlin/.../export`: export service facade.
 - `sdk/src/main/kotlin/.../http`: embedded HTTP export server.
+- `sdk/src/main/sqldelight/...`: SQLDelight schema and queries.
 - `sdk/src/test/kotlin/...`: JVM tests.
 
 ## HTTP export server
@@ -32,7 +34,36 @@ server.start(8081)
 server.stop()
 ```
 
+## Queue storage modes
+
+Default behavior remains unchanged and uses the in-memory queue:
+
+```kotlin
+import com.neptunekit.sdk.android.createExportService
+
+val service = createExportService(queueCapacity = 2_000)
+```
+
+Optional local persistence uses SQLDelight-backed SQLite storage:
+
+```kotlin
+import com.neptunekit.sdk.android.createPersistentExportService
+import java.nio.file.Paths
+
+val service = createPersistentExportService(
+    databasePath = Paths.get("/tmp/neptune-export.db"),
+    queueCapacity = 2_000,
+)
+```
+
+In both modes, the export contract stays the same for:
+
+- `GET /v2/export/health`
+- `GET /v2/export/metrics`
+- `GET /v2/export/logs?cursor&limit`
+
 ## Development
 - `./gradlew test` downloads a local Gradle distribution on first use if Gradle is not installed.
 - JDK 17 is required.
 - See `docs-linhay/dev/mature-library-audit.md` for the HTTP engine migration decision record.
+- See `docs-linhay/features/persistent-export-queue.md` and `docs-linhay/dev/persistent-queue-storage-design.md` for the persistence requirement and design record.

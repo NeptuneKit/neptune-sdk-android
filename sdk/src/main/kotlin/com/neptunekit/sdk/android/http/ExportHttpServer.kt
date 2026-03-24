@@ -20,6 +20,7 @@ import io.ktor.server.request.httpMethod
 import io.ktor.server.request.path
 import io.ktor.server.response.respondText
 import io.ktor.util.pipeline.PipelinePhase
+import java.io.Closeable
 
 private const val DEFAULT_HOST = "127.0.0.1"
 private const val MAX_LIMIT = 1_000
@@ -44,7 +45,7 @@ data class ExportHttpResult(
 class ExportHttpServer(
     private val service: ExportService,
     private val host: String = DEFAULT_HOST,
-) {
+) : Closeable {
     private val router = ExportHttpRouter(service)
     private var server: ApplicationEngine? = null
 
@@ -69,6 +70,11 @@ class ExportHttpServer(
     fun stop() {
         server?.stop(gracePeriodMillis = 0, timeoutMillis = 0)
         server = null
+    }
+
+    override fun close() {
+        stop()
+        service.close()
     }
 }
 
