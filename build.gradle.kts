@@ -1,3 +1,7 @@
+plugins {
+    id("org.jetbrains.kotlin.jvm") apply false
+}
+
 allprojects {
     group = "com.neptunekit.sdk.android"
     version = "0.1.0-SNAPSHOT"
