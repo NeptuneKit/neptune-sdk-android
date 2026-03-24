@@ -12,3 +12,4 @@ pluginManagement {
 
 rootProject.name = "neptune-sdk-android"
 include(":sdk")
+include(":examples:smoke-demo")

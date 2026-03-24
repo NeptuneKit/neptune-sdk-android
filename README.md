@@ -67,6 +67,30 @@ In both modes, the export contract stays the same for:
 - JDK 17 is required.
 - See `docs-linhay/dev/mature-library-audit.md` for the HTTP engine migration decision record.
 - See `docs-linhay/features/persistent-export-queue.md` and `docs-linhay/dev/persistent-queue-storage-design.md` for the persistence requirement and design record.
+- See `docs-linhay/features/smoke-demo.md` for the smoke demo acceptance scope.
+
+## Smoke Demo
+
+The repository includes an executable smoke demo module that sends a few logs through the public SDK API and prints a compact summary of the queue state.
+
+Run it from the repository root:
+
+```bash
+./gradlew smokeDemo
+```
+
+You can also invoke the module directly:
+
+```bash
+./gradlew :examples:smoke-demo:run
+```
+
+The demo output includes:
+
+- queue health
+- queued record count
+- dropped overflow count
+- a compact record list with stable cursors
 
 ## CI
 - GitHub Actions runs `./gradlew test` on pushes to `main` and on pull requests.
