@@ -67,3 +67,7 @@ In both modes, the export contract stays the same for:
 - JDK 17 is required.
 - See `docs-linhay/dev/mature-library-audit.md` for the HTTP engine migration decision record.
 - See `docs-linhay/features/persistent-export-queue.md` and `docs-linhay/dev/persistent-queue-storage-design.md` for the persistence requirement and design record.
+
+## CI
+- GitHub Actions runs `./gradlew test` on pushes to `main` and on pull requests.
+- The workflow uses `actions/setup-java` with Gradle cache enabled and JDK 17 on `ubuntu-latest`.
