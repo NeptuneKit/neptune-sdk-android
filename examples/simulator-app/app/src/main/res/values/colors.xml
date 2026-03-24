@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="demo_background_start">#08121F</color>
+    <color name="demo_background_end">#0E2A33</color>
+    <color name="demo_surface">#122433</color>
+    <color name="demo_surface_border">#23465B</color>
+    <color name="demo_accent">#53D3C0</color>
+    <color name="demo_button_text">#04161C</color>
+    <color name="demo_text_primary">#F5FAFF</color>
+    <color name="demo_text_secondary">#A7BBCB</color>
+</resources>
+

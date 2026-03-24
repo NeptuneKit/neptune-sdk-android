@@ -92,6 +92,27 @@ The demo output includes:
 - dropped overflow count
 - a compact record list with stable cursors
 
+## Android Simulator Demo
+
+An independent Android application lives under `examples/simulator-app/`. It depends on `:sdk` through composite build resolution and does not participate in the default root build graph.
+
+Run it from the repository root:
+
+```bash
+cd examples/simulator-app
+cp local.properties.example local.properties
+./gradlew :app:installDebug
+adb shell am start -n com.neptunekit.sdk.android.examples.simulator/.MainActivity
+```
+
+The app shows:
+
+- a button that writes a log record through the SDK
+- a live metrics panel for queue health
+- logcat output tagged `NeptuneSimulatorDemo` for host-side validation
+
+See `examples/simulator-app/README.md` for emulator setup and validation details.
+
 ## CI
 - GitHub Actions runs `./gradlew test` on pushes to `main` and on pull requests.
 - The workflow uses `actions/setup-java` with Gradle cache enabled and JDK 17 on `ubuntu-latest`.
