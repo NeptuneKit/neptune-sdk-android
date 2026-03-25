@@ -2,10 +2,10 @@
 <resources>
     <string name="app_name">Neptune Simulator</string>
     <string name="demo_title">Neptune SDK Android Demo</string>
-    <string name="demo_subtitle">Tap the button to write a log through the SDK and refresh metrics on screen.</string>
+    <string name="demo_subtitle">Tap the buttons to discover the gateway, auto-upload a log, write a local log, and refresh metrics on screen.</string>
     <string name="demo_metrics_label">Queue snapshot</string>
+    <string name="demo_discover_button">发现网关</string>
     <string name="demo_emit_button">写入日志</string>
-    <string name="demo_logcat_hint">Use adb logcat with tag NeptuneSimulatorDemo to verify the write path.</string>
-    <string name="demo_placeholder_metrics">Clicks: 0\nHealth: ok=true capacity=16 size=0\nMetrics: queuedRecords=0 droppedOverflow=0\nRecent logs:\n- none yet</string>
+    <string name="demo_logcat_hint">Use adb logcat with tag NeptuneSimulatorDemo to verify discovery, ingest upload, and write paths.</string>
+    <string name="demo_placeholder_metrics">Clicks: 0\nHealth: ok=true capacity=16 size=0\nMetrics: queuedRecords=0 droppedOverflow=0\nGateway discovery:\n  status=not-run\nRecent logs:\n- none yet</string>
 </resources>
-

@@ -1,5 +1,6 @@
 package com.neptunekit.sdk.android.http
 
+import com.neptunekit.sdk.android.createExportHttpServer
 import com.neptunekit.sdk.android.export.ExportService
 import com.neptunekit.sdk.android.model.IngestLogRecord
 import com.neptunekit.sdk.android.model.LogLevel
@@ -112,6 +113,25 @@ class ExportHttpServerTest {
     }
 
     @Test
+    fun commandEndpointReturnsPingAckJson() {
+        val response = router.handle(
+            method = "POST",
+            path = "/v2/client/command",
+            parameters = emptyMap(),
+            body = """{"requestId":"req-1","command":"ping"}""",
+        )
+
+        assertEquals(200, response.statusCode)
+
+        val payload = mapper.readTree(response.body)
+        assertEquals("req-1", payload["requestId"]!!.asText())
+        assertEquals("ping", payload["command"]!!.asText())
+        assertEquals("ok", payload["status"]!!.asText())
+        assertTrue(payload["timestamp"]!!.asText().isNotBlank())
+        assertTrue(payload["message"] == null || payload["message"].isNull)
+    }
+
+    @Test
     fun embeddedServerServesHealthEndpointOverHttp() {
         val port = findAvailablePort()
         val server = ExportHttpServer(service)
@@ -144,6 +164,38 @@ class ExportHttpServerTest {
         assertEquals("method_not_allowed", payload["error"]!!["code"]!!.asText())
     }
 
+    @Test
+    fun embeddedServerServesClientCommandAckOverHttp() {
+        val port = findAvailablePort()
+        val server = ExportHttpServer(service)
+        this.server = server
+        server.start(port)
+
+        val response = eventuallyRequest(
+            method = "POST",
+            port = port,
+            path = "/v2/client/command",
+            body = """{"requestId":"req-1","command":"ping"}""",
+        )
+
+        assertEquals(200, response.statusCode())
+
+        val payload = mapper.readTree(response.body())
+        assertEquals("req-1", payload["requestId"]!!.asText())
+        assertEquals("ping", payload["command"]!!.asText())
+        assertEquals("ok", payload["status"]!!.asText())
+        assertTrue(payload["timestamp"]!!.asText().isNotBlank())
+    }
+
+    @Test
+    fun defaultServerBindingUsesWildcardHost() {
+        val server = createExportHttpServer()
+
+        assertEquals("0.0.0.0", server.host)
+
+        server.close()
+    }
+
     @AfterTest
     fun tearDown() {
         server?.stop()
@@ -167,10 +219,10 @@ class ExportHttpServerTest {
             source = null,
         )
 
-    private fun eventuallyRequest(method: String, port: Int, path: String): HttpResponse<String> {
+    private fun eventuallyRequest(method: String, port: Int, path: String, body: String? = null): HttpResponse<String> {
         repeat(20) { attempt ->
             try {
-                return request(method = method, port = port, path = path)
+                return request(method = method, port = port, path = path, body = body)
             } catch (error: Exception) {
                 if (attempt == 19) {
                     throw error
@@ -182,11 +234,14 @@ class ExportHttpServerTest {
         error("unreachable")
     }
 
-    private fun request(method: String, port: Int, path: String): HttpResponse<String> {
+    private fun request(method: String, port: Int, path: String, body: String? = null): HttpResponse<String> {
+        val bodyPublisher = body?.let { HttpRequest.BodyPublishers.ofString(it) }
+            ?: HttpRequest.BodyPublishers.noBody()
         val request = HttpRequest.newBuilder()
             .uri(URI("http://127.0.0.1:$port$path"))
-            .method(method, HttpRequest.BodyPublishers.noBody())
+            .method(method, bodyPublisher)
             .timeout(Duration.ofSeconds(5))
+            .header("Content-Type", "application/json")
             .build()
 
         return httpClient.send(request, HttpResponse.BodyHandlers.ofString())

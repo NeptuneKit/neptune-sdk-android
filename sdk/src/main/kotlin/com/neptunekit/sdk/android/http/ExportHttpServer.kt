@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.node.JsonNodeFactory
 import com.fasterxml.jackson.databind.node.ObjectNode
 import io.ktor.http.ContentType
+import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.withCharset
 import io.ktor.server.application.Application
@@ -18,13 +19,16 @@ import io.ktor.server.engine.ApplicationEngine
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.request.httpMethod
 import io.ktor.server.request.path
+import io.ktor.server.request.receiveText
 import io.ktor.server.response.respondText
 import io.ktor.util.pipeline.PipelinePhase
 import java.io.Closeable
+import java.time.Instant
 
-private const val DEFAULT_HOST = "127.0.0.1"
+internal const val DEFAULT_BIND_HOST = "0.0.0.0"
 private const val MAX_LIMIT = 1_000
 private const val HTTP_STATUS_OK = 200
+private const val HTTP_STATUS_BAD_REQUEST = 400
 private const val HTTP_STATUS_NOT_FOUND = 404
 private const val HTTP_STATUS_METHOD_NOT_ALLOWED = 405
 
@@ -44,7 +48,7 @@ data class ExportHttpResult(
 
 class ExportHttpServer(
     private val service: ExportService,
-    private val host: String = DEFAULT_HOST,
+    val host: String = DEFAULT_BIND_HOST,
 ) : Closeable {
     private val router = ExportHttpRouter(service)
     private var server: ApplicationEngine? = null
@@ -81,9 +85,22 @@ class ExportHttpServer(
 internal class ExportHttpRouter(
     private val service: ExportService,
 ) {
-    fun handle(method: String, path: String, parameters: Map<String, List<String>>): ExportHttpResult =
+    fun handle(
+        method: String,
+        path: String,
+        parameters: Map<String, List<String>>,
+        body: String? = null,
+    ): ExportHttpResult =
         when (method.uppercase()) {
             "GET" -> handleGet(path = path, parameters = parameters)
+            "POST" -> when (path) {
+                "/v2/client/command" -> handleClientCommand(body)
+                else -> jsonError(
+                    statusCode = HTTP_STATUS_METHOD_NOT_ALLOWED,
+                    code = "method_not_allowed",
+                    message = "Only GET is supported.",
+                )
+            }
             else -> jsonError(
                 statusCode = HTTP_STATUS_METHOD_NOT_ALLOWED,
                 code = "method_not_allowed",
@@ -106,15 +123,40 @@ internal class ExportHttpRouter(
                 message = "Unknown export endpoint.",
             )
         }
+
+    private fun handleClientCommand(body: String?): ExportHttpResult {
+        val request = runCatching { parseClientCommandRequest(body) }.getOrElse { error ->
+            return jsonError(
+                statusCode = HTTP_STATUS_BAD_REQUEST,
+                code = "invalid_payload",
+                message = error.message ?: "Invalid client command payload.",
+            )
+        }
+
+        return when (request.command) {
+            "ping" -> jsonOk(clientCommandAckJson(request))
+            else -> jsonError(
+                statusCode = HTTP_STATUS_BAD_REQUEST,
+                code = "unsupported_command",
+                message = "Only ping is supported.",
+            )
+        }
+    }
 }
 
 internal fun Application.exportHttpModule(router: ExportHttpRouter) {
     insertPhaseAfter(io.ktor.server.application.ApplicationCallPipeline.Plugins, exportCallPhase)
     intercept(exportCallPhase) {
+        val body = if (call.request.httpMethod == HttpMethod.Post) {
+            runCatching { call.receiveText() }.getOrDefault("")
+        } else {
+            null
+        }
         val result = router.handle(
             method = call.request.httpMethod.value,
             path = call.request.path(),
             parameters = call.request.queryParameters.toListMap(),
+            body = body,
         )
         call.respondText(
             text = result.body,
@@ -189,6 +231,16 @@ private fun logsJson(page: com.neptunekit.sdk.android.core.LogPage): String =
         },
     )
 
+private fun clientCommandAckJson(request: ClientCommandRequest): String =
+    jsonMapper.writeValueAsString(
+        objectNode().apply {
+            put("requestId", request.requestId)
+            put("command", request.command)
+            put("status", "ok")
+            put("timestamp", Instant.now().toString())
+        },
+    )
+
 private fun recordJson(record: ExportLogRecord): ObjectNode =
     objectNode().apply {
         put("id", record.id)
@@ -233,3 +285,22 @@ private fun io.ktor.http.Parameters.toListMap(): Map<String, List<String>> =
 
 private fun objectNode(): ObjectNode =
     JsonNodeFactory.instance.objectNode()
+
+private fun parseClientCommandRequest(body: String?): ClientCommandRequest {
+    require(!body.isNullOrBlank()) { "missing request body" }
+    val node = jsonMapper.readTree(body)
+    require(node.isObject) { "client command payload must be a JSON object" }
+
+    val requestId = node.textValue("requestId")
+    val command = node.textValue("command")
+    return ClientCommandRequest(
+        requestId = requestId,
+        command = command,
+    )
+}
+
+private fun com.fasterxml.jackson.databind.JsonNode.textValue(name: String): String {
+    val value = this[name]?.asText()?.trim().orEmpty()
+    require(value.isNotBlank()) { "missing $name" }
+    return value
+}

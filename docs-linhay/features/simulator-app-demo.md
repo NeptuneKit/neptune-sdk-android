@@ -18,8 +18,14 @@
 
 - Demo 工程可独立配置并编译
 - Demo Activity 至少包含：
+  - 一个“发现网关”按钮
   - 一个“写入日志”按钮
   - 一个显示 metrics / health 的文本区域
+- 发现网关后：
+  - 通过 Neptune SDK discovery 入口发现 CLI 网关
+  - 文本区域显示 `source`、`host`、`port`、`version` 或错误原因
+  - 若发现成功，自动向 CLI 网关 `POST /v2/logs:ingest` 上报一条结构化日志
+  - 文本区域与 `adb logcat` 都能看到上传结果
 - 点击按钮后：
   - 通过 Neptune SDK 写入一条日志
   - metrics 文本立即刷新
@@ -45,10 +51,17 @@
 - Then SDK 接收到一条 `IngestLogRecord`
 - And metrics / queue size 随之更新
 
-### 场景 3：Demo 可用于人工冒烟
+### 场景 3：按钮触发网关发现
+
+- Given Demo 已启动且可以访问本地 CLI 网关
+- When 用户点击“发现网关”按钮
+- Then Demo 调用 discovery 入口并返回 `source / host / port / version`
+- And 若发现成功，自动调用 `POST /v2/logs:ingest`
+- And 文本区域显示发现结果、上传结果或错误原因
+
+### 场景 4：Demo 可用于人工冒烟
 
 - Given Demo 已安装并启动到 Emulator
 - When 用户点击按钮并查看输出
 - Then 屏幕上能看到最新 metrics 文本
-- And 可通过 `adb logcat` 或 HTTP export 观察到同一批日志
-
+- And 可通过 `adb logcat` 或 HTTP export 观察到同一批日志与上传结果

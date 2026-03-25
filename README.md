@@ -5,7 +5,9 @@ NeptuneKit v2 Android SDK skeleton.
 ## Scope
 - Log queue with stable cursor pagination and optional SQLite persistence.
 - v2 ingest model aligned with the cross-platform contracts.
-- Local HTTP export server backed by Ktor CIO for `GET /v2/export/health`, `GET /v2/export/metrics`, and `GET /v2/export/logs`.
+- Local HTTP export server backed by Ktor CIO for `GET /v2/export/health`, `GET /v2/export/metrics`, `GET /v2/export/logs`, and `POST /v2/client/command`.
+- Gateway discovery with `mDNS` priority and manual `DSN` fallback.
+- Client registration session that posts to `POST /v2/clients:register` on start and renews every 30 seconds.
 - JVM tests for overflow, pagination, and persistence behavior.
 
 ## Layout
@@ -14,6 +16,8 @@ NeptuneKit v2 Android SDK skeleton.
 - `sdk/src/main/kotlin/.../storage`: SQLite persistence implementation.
 - `sdk/src/main/kotlin/.../export`: export service facade.
 - `sdk/src/main/kotlin/.../http`: embedded HTTP export server.
+- `sdk/src/main/kotlin/.../registration`: active callback registration client and renewal loop.
+- `sdk/src/main/kotlin/.../discovery`: gateway discovery client, transport, and `JmDNS` resolver.
 - `sdk/src/main/sqldelight/...`: SQLDelight schema and queries.
 - `sdk/src/test/kotlin/...`: JVM tests.
 
@@ -24,15 +28,69 @@ The embedded export server now runs on Ktor Server with the official CIO engine.
 ```kotlin
 import com.neptunekit.sdk.android.createExportHttpServer
 
-val server = createExportHttpServer()
+val server = createExportHttpServer(host = "127.0.0.1")
 server.start(8081)
 
 // GET http://127.0.0.1:8081/v2/export/health
 // GET http://127.0.0.1:8081/v2/export/metrics
 // GET http://127.0.0.1:8081/v2/export/logs?cursor=1&limit=50
+// POST http://127.0.0.1:8081/v2/client/command {"requestId":"req-1","command":"ping"}
 
 server.stop()
 ```
+
+By default the local HTTP server binds to `0.0.0.0`. Pass `host = "127.0.0.1"` if you want loopback-only listening.
+
+## Active Callback Model
+
+The SDK exposes a small registration session for the callback model:
+
+```kotlin
+import com.neptunekit.sdk.android.createClientRegistrationSession
+import com.neptunekit.sdk.android.discovery.GatewayDiscoveryEndpoint
+
+val session = createClientRegistrationSession(
+    gatewayEndpoint = GatewayDiscoveryEndpoint("127.0.0.1", 18765),
+    callbackUrl = "http://10.0.2.2:8081/v2/client/command",
+    platform = "android",
+    appId = "com.neptunekit.sdk.android.examples.simulator",
+    deviceId = "simulator-device",
+    sessionId = "simulator-session",
+)
+
+session.start()
+// session.close()
+```
+
+The registration payload uses `platform + appId + deviceId` as the primary identity key.
+`sessionId` is carried for display and diagnostics only.
+
+## Gateway discovery
+
+The SDK can discover the CLI gateway in two steps:
+
+1. Try `mDNS` candidates first.
+2. Fall back to the manually configured DSN if `mDNS` fails.
+
+Discovery probes `GET /v2/gateway/discovery` and expects a JSON payload with `host`, `port`, and `version`.
+
+```kotlin
+import com.neptunekit.sdk.android.createGatewayDiscovery
+import com.neptunekit.sdk.android.discovery.GatewayDiscoveryConfig
+
+val discovery = createGatewayDiscovery()
+val result = discovery.discover(
+    GatewayDiscoveryConfig(
+        manualDsn = "127.0.0.1:18765",
+        mdnsServiceType = "_neptune._tcp.local.",
+        timeoutMillis = 2_000,
+    ),
+)
+
+println("${result.source} -> ${result.host}:${result.port} (${result.version})")
+```
+
+For tests, inject `GatewayDiscoveryMdnsResolver` and `GatewayDiscoveryHttpClient` so discovery behavior stays deterministic.
 
 ## Queue storage modes
 
@@ -105,7 +163,9 @@ cp local.properties.example local.properties
 adb shell am start -n com.neptunekit.sdk.android.examples.simulator/.MainActivity
 ```
 
-The app shows:
+The app automatically opens `ws://10.0.2.2:18765/v2/ws` on launch, sends `hello(role=sdk)`, keeps a 15 second heartbeat, and retries on 0.5/1/2/4/8 second backoff when the socket goes stale.
+
+The app also shows:
 
 - a button that writes a log record through the SDK
 - a live metrics panel for queue health
