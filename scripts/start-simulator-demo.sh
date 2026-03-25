@@ -12,7 +12,7 @@ BOOT_TIMEOUT_SECONDS=600
 AVD_NAME=""
 LIST_AVDS=0
 DRY_RUN=0
-WINDOW_MODE="headless"
+WINDOW_MODE="window"
 EXTRA_EMULATOR_ARGS=()
 
 die() {
@@ -31,13 +31,14 @@ info() {
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/start-simulator-demo.sh [--avd NAME] [--list-avds] [--dry-run] [--window]
+  scripts/start-simulator-demo.sh [--avd NAME] [--list-avds] [--dry-run] [--window|--headless]
 
 Options:
   --avd NAME      Use a specific Android Virtual Device.
   --list-avds     Print available AVD names and exit.
   --dry-run       Resolve SDK, AVD, adb, and planned commands without launching anything.
-  --window        Launch the emulator with a visible window instead of headless mode.
+  --window        Launch the emulator with a visible window (default).
+  --headless      Launch the emulator in headless mode.
   --help          Show this help text.
 
 Environment:
@@ -62,6 +63,9 @@ while (($# > 0)); do
       ;;
     --window)
       WINDOW_MODE="window"
+      ;;
+    --headless)
+      WINDOW_MODE="headless"
       ;;
     --help|-h)
       usage
