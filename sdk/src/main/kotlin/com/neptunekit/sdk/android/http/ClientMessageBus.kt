@@ -36,6 +36,7 @@ internal data class BusEnvelope(
 
 internal data class BusAck(
     val requestId: String? = null,
+    val direction: String = BusDirection.CLIENT_TO_CLI.rawValue,
     val command: String? = null,
     val status: String,
     val message: String? = null,
