@@ -30,7 +30,14 @@ data class ClientRegistrationPayload(
     val appId: String,
     val deviceId: String,
     val sessionId: String? = null,
-    val callbackUrl: String,
+    val callbackEndpoint: String,
+    val preferredTransports: List<String> = emptyList(),
+    val usbmuxdHint: ClientUSBMuxdHint? = null,
+)
+
+data class ClientUSBMuxdHint(
+    val deviceID: Int,
+    val socketPath: String? = null,
 )
 
 data class ClientRegistrationResponse(
@@ -102,7 +109,18 @@ class OkHttpClientRegistrationTransport(
             put("appId", appId)
             put("deviceId", deviceId)
             sessionId?.takeIf { it.isNotBlank() }?.let { put("sessionId", it) }
-            put("callbackUrl", callbackUrl)
+            put("callbackEndpoint", callbackEndpoint)
+            if (preferredTransports.isNotEmpty()) {
+                putArray("preferredTransports").apply {
+                    preferredTransports.forEach { add(it) }
+                }
+            }
+            usbmuxdHint?.let { hint ->
+                putObject("usbmuxdHint").apply {
+                    put("deviceID", hint.deviceID)
+                    hint.socketPath?.takeIf { value -> value.isNotBlank() }?.let { put("socketPath", it) }
+                }
+            }
         }.toString().toRequestBody(JSON_MEDIA_TYPE)
 
     private fun Response.toRegistrationResponse(): ClientRegistrationResponse =
@@ -121,10 +139,12 @@ class OkHttpClientRegistrationTransport(
 
 class ClientRegistrationSession(
     val identity: ClientIdentity,
-    private val callbackUrl: String,
+    private val callbackEndpoint: String,
     private val transport: ClientRegistrationTransport,
     private val scheduler: ClientRegistrationScheduler = DefaultClientRegistrationScheduler,
     private val renewIntervalMillis: Long = DEFAULT_CLIENT_REGISTRATION_RENEW_INTERVAL_MILLIS,
+    private val preferredTransports: List<String> = emptyList(),
+    private val usbmuxdHint: ClientUSBMuxdHint? = null,
 ) : Closeable {
     private val started = AtomicBoolean(false)
     @Volatile private var schedule: ClientRegistrationSchedule? = null
@@ -150,16 +170,18 @@ class ClientRegistrationSession(
 
     private fun performRegistration() {
         runCatching {
-            transport.register(identity.toPayload(callbackUrl))
+            transport.register(identity.toPayload(callbackEndpoint))
         }
     }
 
-    private fun ClientIdentity.toPayload(callbackUrl: String): ClientRegistrationPayload =
+    private fun ClientIdentity.toPayload(callbackEndpoint: String): ClientRegistrationPayload =
         ClientRegistrationPayload(
             platform = platform,
             appId = appId,
             deviceId = deviceId,
             sessionId = sessionId,
-            callbackUrl = callbackUrl,
+            callbackEndpoint = callbackEndpoint,
+            preferredTransports = preferredTransports,
+            usbmuxdHint = usbmuxdHint,
         )
 }

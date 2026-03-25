@@ -32,7 +32,7 @@ class MainActivity : AppCompatActivity() {
                 host = SIMULATOR_GATEWAY_HOST,
                 port = SIMULATOR_GATEWAY_PORT,
             ),
-            callbackUrl = SIMULATOR_CALLBACK_URL,
+            callbackEndpoint = SIMULATOR_CALLBACK_URL,
             platform = SIMULATOR_PLATFORM,
             appId = SIMULATOR_APP_ID,
             sessionId = SIMULATOR_SESSION_ID,

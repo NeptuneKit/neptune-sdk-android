@@ -118,7 +118,7 @@ class ExportHttpServerTest {
             method = "POST",
             path = "/v2/client/command",
             parameters = emptyMap(),
-            body = """{"requestId":"req-1","command":"ping"}""",
+            body = """{"requestId":"req-1","direction":"cli_to_client","kind":"command","command":"ping"}""",
         )
 
         assertEquals(200, response.statusCode)
@@ -175,7 +175,7 @@ class ExportHttpServerTest {
             method = "POST",
             port = port,
             path = "/v2/client/command",
-            body = """{"requestId":"req-1","command":"ping"}""",
+            body = """{"requestId":"req-1","direction":"cli_to_client","kind":"command","command":"ping"}""",
         )
 
         assertEquals(200, response.statusCode())

@@ -34,7 +34,8 @@ class ClientRegistrationTransportTest {
                 appId = "com.neptunekit.sdk.android.examples.simulator",
                 deviceId = "simulator-device",
                 sessionId = "session-001",
-                callbackUrl = "http://10.0.2.2:18765/v2/client/command",
+                callbackEndpoint = "http://10.0.2.2:18765/v2/client/command",
+                preferredTransports = listOf("httpCallback"),
             ),
         )
 
@@ -50,6 +51,7 @@ class ClientRegistrationTransportTest {
         assertEquals("com.neptunekit.sdk.android.examples.simulator", payload["appId"].asText())
         assertEquals("simulator-device", payload["deviceId"].asText())
         assertEquals("session-001", payload["sessionId"].asText())
-        assertEquals("http://10.0.2.2:18765/v2/client/command", payload["callbackUrl"].asText())
+        assertEquals("http://10.0.2.2:18765/v2/client/command", payload["callbackEndpoint"].asText())
+        assertEquals("httpCallback", payload["preferredTransports"][0].asText())
     }
 }

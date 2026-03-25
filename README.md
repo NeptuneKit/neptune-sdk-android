@@ -51,7 +51,7 @@ import com.neptunekit.sdk.android.discovery.GatewayDiscoveryEndpoint
 
 val session = createClientRegistrationSession(
     gatewayEndpoint = GatewayDiscoveryEndpoint("127.0.0.1", 18765),
-    callbackUrl = "http://10.0.2.2:8081/v2/client/command",
+    callbackEndpoint = "http://10.0.2.2:8081/v2/client/command",
     platform = "android",
     appId = "com.neptunekit.sdk.android.examples.simulator",
     deviceId = "simulator-device",

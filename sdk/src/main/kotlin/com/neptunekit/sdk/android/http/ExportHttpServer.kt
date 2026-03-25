@@ -23,7 +23,6 @@ import io.ktor.server.request.receiveText
 import io.ktor.server.response.respondText
 import io.ktor.util.pipeline.PipelinePhase
 import java.io.Closeable
-import java.time.Instant
 
 internal const val DEFAULT_BIND_HOST = "0.0.0.0"
 private const val MAX_LIMIT = 1_000
@@ -84,6 +83,7 @@ class ExportHttpServer(
 
 internal class ExportHttpRouter(
     private val service: ExportService,
+    private val messageBus: ClientMessageBus = ClientMessageBus(),
 ) {
     fun handle(
         method: String,
@@ -125,7 +125,7 @@ internal class ExportHttpRouter(
         }
 
     private fun handleClientCommand(body: String?): ExportHttpResult {
-        val request = runCatching { parseClientCommandRequest(body) }.getOrElse { error ->
+        val envelope = runCatching { parseBusEnvelope(body) }.getOrElse { error ->
             return jsonError(
                 statusCode = HTTP_STATUS_BAD_REQUEST,
                 code = "invalid_payload",
@@ -133,12 +133,14 @@ internal class ExportHttpRouter(
             )
         }
 
-        return when (request.command) {
-            "ping" -> jsonOk(clientCommandAckJson(request))
-            else -> jsonError(
+        val ack = messageBus.acknowledgeInboundCommand(envelope)
+        return if (ack.status == BusAckStatus.OK.rawValue) {
+            jsonOk(busAckJson(ack))
+        } else {
+            jsonError(
                 statusCode = HTTP_STATUS_BAD_REQUEST,
                 code = "unsupported_command",
-                message = "Only ping is supported.",
+                message = ack.message ?: "Only ping is supported.",
             )
         }
     }
@@ -231,15 +233,8 @@ private fun logsJson(page: com.neptunekit.sdk.android.core.LogPage): String =
         },
     )
 
-private fun clientCommandAckJson(request: ClientCommandRequest): String =
-    jsonMapper.writeValueAsString(
-        objectNode().apply {
-            put("requestId", request.requestId)
-            put("command", request.command)
-            put("status", "ok")
-            put("timestamp", Instant.now().toString())
-        },
-    )
+private fun busAckJson(ack: BusAck): String =
+    jsonMapper.writeValueAsString(ack)
 
 private fun recordJson(record: ExportLogRecord): ObjectNode =
     objectNode().apply {
@@ -286,21 +281,27 @@ private fun io.ktor.http.Parameters.toListMap(): Map<String, List<String>> =
 private fun objectNode(): ObjectNode =
     JsonNodeFactory.instance.objectNode()
 
-private fun parseClientCommandRequest(body: String?): ClientCommandRequest {
+private fun parseBusEnvelope(body: String?): BusEnvelope {
     require(!body.isNullOrBlank()) { "missing request body" }
     val node = jsonMapper.readTree(body)
     require(node.isObject) { "client command payload must be a JSON object" }
 
-    val requestId = node.textValue("requestId")
-    val command = node.textValue("command")
-    return ClientCommandRequest(
-        requestId = requestId,
-        command = command,
+    return BusEnvelope(
+        requestId = node.optionalText("requestId"),
+        direction = node.requiredText("direction"),
+        kind = node.requiredText("kind"),
+        command = node.optionalText("command"),
+        timestamp = node.optionalText("timestamp"),
     )
 }
 
-private fun com.fasterxml.jackson.databind.JsonNode.textValue(name: String): String {
+private fun com.fasterxml.jackson.databind.JsonNode.requiredText(name: String): String {
     val value = this[name]?.asText()?.trim().orEmpty()
     require(value.isNotBlank()) { "missing $name" }
     return value
+}
+
+private fun com.fasterxml.jackson.databind.JsonNode.optionalText(name: String): String? {
+    val value = this[name]?.asText()?.trim().orEmpty()
+    return value.ifBlank { null }
 }

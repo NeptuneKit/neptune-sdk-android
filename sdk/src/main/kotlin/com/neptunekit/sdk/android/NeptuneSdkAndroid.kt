@@ -9,6 +9,7 @@ import com.neptunekit.sdk.android.http.DEFAULT_BIND_HOST
 import com.neptunekit.sdk.android.http.ExportHttpServer
 import com.neptunekit.sdk.android.registration.ClientIdentity
 import com.neptunekit.sdk.android.registration.ClientRegistrationSession
+import com.neptunekit.sdk.android.registration.ClientUSBMuxdHint
 import com.neptunekit.sdk.android.registration.OkHttpClientRegistrationTransport
 import com.neptunekit.sdk.android.registration.DEFAULT_CLIENT_REGISTRATION_RENEW_INTERVAL_MILLIS
 import com.neptunekit.sdk.android.ws.GatewayWebSocketClient
@@ -47,12 +48,14 @@ fun createGatewayWebSocketClient(): GatewayWebSocketClient = GatewayWebSocketCli
 
 fun createClientRegistrationSession(
     gatewayEndpoint: GatewayDiscoveryEndpoint,
-    callbackUrl: String,
+    callbackEndpoint: String,
     platform: String,
     appId: String,
     deviceId: String,
     sessionId: String? = null,
     renewIntervalMillis: Long = DEFAULT_CLIENT_REGISTRATION_RENEW_INTERVAL_MILLIS,
+    preferredTransports: List<String> = emptyList(),
+    usbmuxdHint: ClientUSBMuxdHint? = null,
 ): ClientRegistrationSession =
     ClientRegistrationSession(
         identity = ClientIdentity(
@@ -61,9 +64,11 @@ fun createClientRegistrationSession(
             deviceId = deviceId,
             sessionId = sessionId,
         ),
-        callbackUrl = callbackUrl,
+        callbackEndpoint = callbackEndpoint,
         transport = OkHttpClientRegistrationTransport(registerUrl = gatewayEndpoint.registrationUrl()),
         renewIntervalMillis = renewIntervalMillis,
+        preferredTransports = preferredTransports,
+        usbmuxdHint = usbmuxdHint,
     )
 
 private fun GatewayDiscoveryEndpoint.registrationUrl(): HttpUrl =

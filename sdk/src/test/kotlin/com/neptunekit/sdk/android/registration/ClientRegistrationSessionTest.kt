@@ -16,9 +16,10 @@ class ClientRegistrationSessionTest {
                 deviceId = "simulator-device",
                 sessionId = "session-001",
             ),
-            callbackUrl = "http://10.0.2.2:18765/v2/client/command",
+            callbackEndpoint = "http://10.0.2.2:18765/v2/client/command",
             transport = transport,
             scheduler = scheduler,
+            preferredTransports = listOf("httpCallback"),
         )
 
         assertEquals("android|com.neptunekit.sdk.android.examples.simulator|simulator-device", session.identity.primaryKey)
@@ -34,7 +35,8 @@ class ClientRegistrationSessionTest {
         assertEquals("com.neptunekit.sdk.android.examples.simulator", initialPayload.appId)
         assertEquals("simulator-device", initialPayload.deviceId)
         assertEquals("session-001", initialPayload.sessionId)
-        assertEquals("http://10.0.2.2:18765/v2/client/command", initialPayload.callbackUrl)
+        assertEquals("http://10.0.2.2:18765/v2/client/command", initialPayload.callbackEndpoint)
+        assertEquals(listOf("httpCallback"), initialPayload.preferredTransports)
 
         scheduler.runScheduledTask()
 
