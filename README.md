@@ -176,3 +176,14 @@ See `examples/simulator-app/README.md` for emulator setup and validation details
 ## CI
 - GitHub Actions runs `./gradlew test` on pushes to `main` and on pull requests.
 - The workflow uses `actions/setup-java` with Gradle cache enabled and JDK 17 on `ubuntu-latest`.
+
+## Maven Central Publish
+- Workflow: `.github/workflows/publish-maven-central.yml`
+- Trigger:
+  - push tag（例如 `v1.2.3` 或 `2026.3.26`）
+  - `workflow_dispatch`（支持 `version` 与 `dry_run`）
+- Required GitHub Secrets:
+  - `MAVEN_CENTRAL_USERNAME`
+  - `MAVEN_CENTRAL_PASSWORD`
+  - `MAVEN_SIGNING_KEY`（ASCII-armored private key）
+  - `MAVEN_SIGNING_PASSWORD`

@@ -4,7 +4,7 @@ plugins {
 
 allprojects {
     group = "com.neptunekit.sdk.android"
-    version = "0.1.0-SNAPSHOT"
+    version = (findProperty("VERSION_NAME") as String?) ?: "0.1.0-SNAPSHOT"
 
     repositories {
         mavenCentral()
