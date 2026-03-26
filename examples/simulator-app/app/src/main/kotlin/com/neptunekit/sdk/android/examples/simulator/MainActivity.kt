@@ -4,9 +4,10 @@ import android.os.Bundle
 import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
 import com.neptunekit.sdk.android.createClientRegistrationSession
-import com.neptunekit.sdk.android.createExportHttpServer
+import com.neptunekit.sdk.android.createExportService
 import com.neptunekit.sdk.android.examples.simulator.databinding.ActivityMainBinding
 import com.neptunekit.sdk.android.discovery.GatewayDiscoveryEndpoint
+import com.neptunekit.sdk.android.http.ExportHttpServer
 import com.neptunekit.sdk.android.ws.GatewayWebSocketClient
 
 private const val TAG = "NeptuneSimulatorDemo"
@@ -22,9 +23,10 @@ private const val SIMULATOR_CALLBACK_URL = "http://127.0.0.1:$SIMULATOR_CALLBACK
 
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
-    private val controller by lazy { SimulatorDemoController() }
+    private val sharedExportService by lazy { createExportService(queueCapacity = 16) }
+    private val controller by lazy { SimulatorDemoController(service = sharedExportService) }
     private val callbackHttpServer by lazy {
-        createExportHttpServer(queueCapacity = 16, host = "0.0.0.0")
+        ExportHttpServer(sharedExportService, host = "0.0.0.0")
     }
     private val registrationSession by lazy {
         createClientRegistrationSession(
@@ -152,7 +154,7 @@ class MainActivity : AppCompatActivity() {
         if (::binding.isInitialized) {
             gatewayWebSocketClient.close()
             registrationSession.close()
-            callbackHttpServer.close()
+            callbackHttpServer.stop()
             controller.close()
         }
     }
