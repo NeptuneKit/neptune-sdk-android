@@ -69,11 +69,14 @@ jobs:
 
       - name: Dry run publish to local Maven
         if: ${{ inputs.dry_run }}
+        env:
+          ORG_GRADLE_PROJECT_signingKey: ${{ secrets.MAVEN_SIGNING_KEY }}
+          ORG_GRADLE_PROJECT_signingPassword: ${{ secrets.MAVEN_SIGNING_PASSWORD }}
         run: |
           ./gradlew :sdk:publishToMavenLocal \
             -PVERSION_NAME="${{ steps.version.outputs.version_name }}"
 
-      - name: Publish to Maven Central (Sonatype OSSRH)
+      - name: Publish to Maven Central (Central Portal OSSRH Staging API)
         if: ${{ !inputs.dry_run }}
         env:
           ORG_GRADLE_PROJECT_MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
@@ -83,3 +86,25 @@ jobs:
         run: |
           ./gradlew :sdk:publish \
             -PVERSION_NAME="${{ steps.version.outputs.version_name }}"
+
+      - name: Trigger Central Portal manual upload
+        if: ${{ !inputs.dry_run }}
+        env:
+          MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          MAVEN_CENTRAL_NAMESPACE: ${{ secrets.MAVEN_CENTRAL_NAMESPACE }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${MAVEN_CENTRAL_NAMESPACE:-}" ]]; then
+            echo "Missing secret MAVEN_CENTRAL_NAMESPACE" >&2
+            exit 1
+          fi
+
+          auth="$(printf '%s:%s' "${MAVEN_CENTRAL_USERNAME}" "${MAVEN_CENTRAL_PASSWORD}" | base64 | tr -d '\n')"
+
+          curl --fail-with-body --request POST \
+            --url "https://ossrh-staging-api.central.sonatype.com/manual/upload/defaultRepository/${MAVEN_CENTRAL_NAMESPACE}" \
+            --header "Authorization: Bearer ${auth}" \
+            --header "Accept: application/json"
