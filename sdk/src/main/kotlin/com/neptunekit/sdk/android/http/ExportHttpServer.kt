@@ -1,6 +1,5 @@
 package com.neptunekit.sdk.android.http
 
-import com.neptunekit.sdk.android.core.DEFAULT_PAGE_LIMIT
 import com.neptunekit.sdk.android.export.ExportMetrics
 import com.neptunekit.sdk.android.export.ExportService
 import com.neptunekit.sdk.android.export.ServiceHealth
@@ -25,7 +24,7 @@ import io.ktor.util.pipeline.PipelinePhase
 import java.io.Closeable
 
 internal const val DEFAULT_BIND_HOST = "0.0.0.0"
-private const val MAX_LIMIT = 1_000
+private const val MAX_LENGTH = 10_000
 private const val HTTP_STATUS_OK = 200
 private const val HTTP_STATUS_BAD_REQUEST = 400
 private const val HTTP_STATUS_NOT_FOUND = 404
@@ -37,7 +36,7 @@ private val exportCallPhase = PipelinePhase("ExportHttpRouter")
 
 data class ExportQueryParameters(
     val cursor: Long?,
-    val limit: Int,
+    val length: Int?,
 )
 
 data class ExportHttpResult(
@@ -114,7 +113,7 @@ internal class ExportHttpRouter(
             "/v2/export/metrics" -> jsonOk(metricsJson(service.metrics()))
             "/v2/logs" -> {
                 val query = parseExportQueryParameters(parameters)
-                jsonOk(logsJson(service.logs(cursor = query.cursor, limit = query.limit)))
+                jsonOk(logsJson(service.logs(cursor = query.cursor, limit = query.length ?: Int.MAX_VALUE)))
             }
 
             else -> jsonError(
@@ -174,13 +173,13 @@ internal fun parseExportQueryParameters(parameters: Map<String, List<String>>): 
         ?.takeIf { it.isNotBlank() }
         ?.toLongOrNull()
 
-    val limit = parameters.firstValue("limit")
+    val length = parameters.firstValue("length")
         ?.takeIf { it.isNotBlank() }
         ?.toIntOrNull()
-        ?.coerceIn(1, MAX_LIMIT)
-        ?: DEFAULT_PAGE_LIMIT
+        ?.takeIf { it > 0 }
+        ?.coerceAtMost(MAX_LENGTH)
 
-    return ExportQueryParameters(cursor = cursor, limit = limit)
+    return ExportQueryParameters(cursor = cursor, length = length)
 }
 
 private fun jsonOk(body: String): ExportHttpResult =
@@ -222,13 +221,6 @@ private fun logsJson(page: com.neptunekit.sdk.android.core.LogPage): String =
         objectNode().apply {
             val records = putArray("records")
             page.records.forEach { records.add(recordJson(it)) }
-
-            if (page.nextCursor == null) {
-                putNull("nextCursor")
-            } else {
-                put("nextCursor", page.nextCursor)
-            }
-
             put("hasMore", page.hasMore)
         },
     )

@@ -26,16 +26,16 @@ class ExportHttpServerTest {
     private val httpClient = HttpClient.newHttpClient()
 
     @Test
-    fun parsesCursorAndLimitQueryParameters() {
+    fun parsesCursorAndLengthQueryParameters() {
         val query = parseExportQueryParameters(
             mapOf(
                 "cursor" to listOf("41"),
-                "limit" to listOf("7"),
+                "length" to listOf("7"),
             ),
         )
 
         assertEquals(41L, query.cursor)
-        assertEquals(7, query.limit)
+        assertEquals(7, query.length)
     }
 
     @Test
@@ -43,12 +43,12 @@ class ExportHttpServerTest {
         val query = parseExportQueryParameters(
             mapOf(
                 "cursor" to listOf("not-a-number"),
-                "limit" to listOf("0"),
+                "length" to listOf("0"),
             ),
         )
 
         assertEquals(null, query.cursor)
-        assertEquals(1, query.limit)
+        assertEquals(null, query.length)
     }
 
     @Test
@@ -70,7 +70,7 @@ class ExportHttpServerTest {
         val response = router.handle(
             method = "GET",
             path = "/v2/logs",
-            parameters = mapOf("cursor" to listOf("0"), "limit" to listOf("10")),
+            parameters = mapOf("cursor" to listOf("0"), "length" to listOf("10")),
         )
 
         assertEquals(200, response.statusCode)
@@ -86,6 +86,7 @@ class ExportHttpServerTest {
         assertEquals("a-value", record["attributes"]!!["a-key"]!!.asText())
         assertEquals("b-value", record["attributes"]!!["b-key"]!!.asText())
         assertTrue(record["source"]!!.isNull)
+        assertTrue(payload["nextCursor"] == null || payload["nextCursor"].isMissingNode || payload["nextCursor"].isNull)
         assertFalse(payload["hasMore"]!!.asBoolean())
     }
 
