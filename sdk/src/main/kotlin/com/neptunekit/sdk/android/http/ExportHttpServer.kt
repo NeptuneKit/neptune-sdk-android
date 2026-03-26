@@ -112,7 +112,7 @@ internal class ExportHttpRouter(
         when (path) {
             "/v2/export/health" -> jsonOk(healthJson(service.health()))
             "/v2/export/metrics" -> jsonOk(metricsJson(service.metrics()))
-            "/v2/export/logs" -> {
+            "/v2/logs" -> {
                 val query = parseExportQueryParameters(parameters)
                 jsonOk(logsJson(service.logs(cursor = query.cursor, limit = query.limit)))
             }

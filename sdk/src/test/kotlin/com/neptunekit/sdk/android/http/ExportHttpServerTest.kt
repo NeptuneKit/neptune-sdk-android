@@ -69,7 +69,7 @@ class ExportHttpServerTest {
 
         val response = router.handle(
             method = "GET",
-            path = "/v2/export/logs",
+            path = "/v2/logs",
             parameters = mapOf("cursor" to listOf("0"), "limit" to listOf("10")),
         )
 
