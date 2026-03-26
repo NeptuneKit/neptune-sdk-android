@@ -3,7 +3,7 @@ plugins {
 }
 
 allprojects {
-    group = "com.neptunekit.sdk.android"
+    group = "io.github.linhay"
     version = (findProperty("VERSION_NAME") as String?) ?: "0.1.0-SNAPSHOT"
 
     repositories {
