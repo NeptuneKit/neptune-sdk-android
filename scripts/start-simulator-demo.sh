@@ -9,10 +9,12 @@ APP_ACTIVITY=".MainActivity"
 CALLBACK_HOST_PORT=28766
 CALLBACK_DEVICE_PORT=18766
 BOOT_TIMEOUT_SECONDS=600
+RESIDENCY_SECONDS=30
 AVD_NAME=""
 LIST_AVDS=0
 DRY_RUN=0
 WINDOW_MODE="window"
+KEEP_EMULATOR_LOG=0
 EXTRA_EMULATOR_ARGS=()
 
 die() {
@@ -31,7 +33,7 @@ info() {
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/start-simulator-demo.sh [--avd NAME] [--list-avds] [--dry-run] [--window|--headless]
+  scripts/start-simulator-demo.sh [--avd NAME] [--list-avds] [--dry-run] [--window|--headless] [--residency-seconds N] [--keep-emulator-log]
 
 Options:
   --avd NAME      Use a specific Android Virtual Device.
@@ -39,12 +41,18 @@ Options:
   --dry-run       Resolve SDK, AVD, adb, and planned commands without launching anything.
   --window        Launch the emulator with a visible window (default).
   --headless      Launch the emulator in headless mode.
+  --residency-seconds N
+                  Poll emulator residency with the resolved adb for N seconds after app launch. Use 0 to disable. Default: 30.
+  --keep-emulator-log
+                  Keep emulator log file even on successful run.
   --help          Show this help text.
 
 Environment:
   ANDROID_SDK_ROOT / ANDROID_HOME
   AVD_NAME
   BOOT_TIMEOUT_SECONDS
+  RESIDENCY_SECONDS
+  KEEP_EMULATOR_LOG
 EOF
 }
 
@@ -67,6 +75,14 @@ while (($# > 0)); do
     --headless)
       WINDOW_MODE="headless"
       ;;
+    --residency-seconds)
+      shift || die "Missing value after --residency-seconds"
+      [ $# -gt 0 ] || die "Missing value after --residency-seconds"
+      RESIDENCY_SECONDS="$1"
+      ;;
+    --keep-emulator-log)
+      KEEP_EMULATOR_LOG=1
+      ;;
     --help|-h)
       usage
       exit 0
@@ -77,6 +93,22 @@ while (($# > 0)); do
   esac
   shift
 done
+
+RESIDENCY_SECONDS="${RESIDENCY_SECONDS:-30}"
+KEEP_EMULATOR_LOG="${KEEP_EMULATOR_LOG:-0}"
+
+case "$RESIDENCY_SECONDS" in
+  ''|*[!0-9]*)
+    die "RESIDENCY_SECONDS must be a non-negative integer, got: $RESIDENCY_SECONDS"
+    ;;
+esac
+
+case "$KEEP_EMULATOR_LOG" in
+  0|1) ;;
+  *)
+    die "KEEP_EMULATOR_LOG must be 0 or 1, got: $KEEP_EMULATOR_LOG"
+    ;;
+esac
 
 local_sdk_dir() {
   local local_properties="$APP_DIR/local.properties"
@@ -278,6 +310,67 @@ wait_for_boot_complete() {
   return 1
 }
 
+warn_if_adb_mismatch() {
+  local path_adb=""
+  path_adb="$(command -v adb 2>/dev/null || true)"
+  if [ -z "$path_adb" ]; then
+    return 0
+  fi
+
+  if [ "$path_adb" = "$ADB_BIN" ]; then
+    return 0
+  fi
+
+  local resolved_version=""
+  local path_version=""
+  resolved_version="$("$ADB_BIN" version 2>/dev/null | sed -n '2p' || true)"
+  path_version="$(adb version 2>/dev/null | sed -n '2p' || true)"
+  warn "PATH adb differs from resolved adb."
+  warn "Resolved adb: $ADB_BIN (${resolved_version:-unknown version})"
+  warn "PATH adb: $path_adb (${path_version:-unknown version})"
+  warn "Use '$ADB_BIN devices -l' when checking residency for consistent results."
+}
+
+verify_residency() {
+  local serial="$1"
+  local pid="$2"
+  local seconds="$3"
+  local interval=5
+  local polls=1
+  local i=1
+  local state=""
+  local line=""
+
+  if [ "$seconds" -le 0 ]; then
+    info "Residency check disabled (RESIDENCY_SECONDS=$seconds)."
+    return 0
+  fi
+
+  polls=$((seconds / interval))
+  if [ "$polls" -lt 1 ]; then
+    polls=1
+  fi
+
+  info "Verifying emulator residency for ${seconds}s using $ADB_BIN."
+  while [ "$i" -le "$polls" ]; do
+    state="$("$ADB_BIN" -s "$serial" get-state 2>/dev/null || true)"
+    line="$("$ADB_BIN" devices 2>/dev/null | awk -v serial="$serial" '$1 == serial {print $0; exit}')"
+    if ! kill -0 "$pid" >/dev/null 2>&1; then
+      warn "Residency check failed: emulator process exited during poll $i/$polls."
+      return 1
+    fi
+    if [ "$state" != "device" ]; then
+      warn "Residency check failed: adb state is '${state:-<empty>}' during poll $i/$polls."
+      warn "adb devices line: ${line:-<missing>}"
+      return 1
+    fi
+    sleep "$interval"
+    i=$((i + 1))
+  done
+
+  info "Emulator residency verified for ${seconds}s."
+}
+
 if [ "$LIST_AVDS" -eq 1 ]; then
   info "Resolved SDK root: $SDK_ROOT"
   info "Available AVDs:"
@@ -295,6 +388,8 @@ if [ "$DRY_RUN" -eq 1 ]; then
   info "Resolved adb: $ADB_BIN"
   info "Selected AVD: $AVD_TO_RUN"
   info "Selected adb serial: $ADB_SERIAL"
+  info "Residency check seconds: $RESIDENCY_SECONDS"
+  info "Keep emulator log on success: $KEEP_EMULATOR_LOG"
   info "Launch mode: $WINDOW_MODE"
   info "Would install demo app from: $APP_DIR"
   info "Would run: $EMULATOR_BIN -avd $AVD_TO_RUN -port $CONSOLE_PORT ..."
@@ -308,6 +403,8 @@ cleanup() {
   local exit_code=$?
   if [ "$exit_code" -ne 0 ]; then
     warn "Emulator log: $EMULATOR_LOG"
+  elif [ "$KEEP_EMULATOR_LOG" -eq 1 ]; then
+    info "Keeping emulator log: $EMULATOR_LOG"
   else
     rm -f "$EMULATOR_LOG"
   fi
@@ -323,15 +420,17 @@ EMULATOR_ARGS=(
   -no-audio
 )
 
-if [ "$WINDOW_MODE" = "headless" ]; then
-  EMULATOR_ARGS+=(-no-window -gpu swiftshader_indirect)
-fi
-
 if [ "${#EXTRA_EMULATOR_ARGS[@]}" -gt 0 ]; then
   EMULATOR_ARGS+=("${EXTRA_EMULATOR_ARGS[@]}")
 fi
 
+if [ "$WINDOW_MODE" = "headless" ]; then
+  EMULATOR_ARGS+=(-no-window -gpu swiftshader_indirect)
+fi
+
 info "Resolved SDK root: $SDK_ROOT"
+info "Resolved adb: $ADB_BIN"
+warn_if_adb_mismatch
 info "Starting emulator for AVD: $AVD_TO_RUN"
 info "ADB serial will be: $ADB_SERIAL"
 nohup "$EMULATOR_BIN" "${EMULATOR_ARGS[@]}" >"$EMULATOR_LOG" 2>&1 < /dev/null &
@@ -367,5 +466,7 @@ info "Creating adb forward tcp:${CALLBACK_HOST_PORT} -> tcp:${CALLBACK_DEVICE_PO
 
 info "Launching demo activity."
 "$ADB_BIN" -s "$ADB_SERIAL" shell am start -W -n "$APP_ID/$APP_ACTIVITY"
+
+verify_residency "$ADB_SERIAL" "$EMULATOR_PID" "$RESIDENCY_SECONDS"
 
 info "Demo app started successfully on $ADB_SERIAL."

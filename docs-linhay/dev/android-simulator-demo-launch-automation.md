@@ -26,6 +26,7 @@
 6. 等待 adb 进入 `device` 状态并完成 boot
 7. 通过 Gradle 安装 demo app
 8. 用 `adb shell am start` 启动 `MainActivity`
+9. 在脚本内用同一个 `adb` 做驻留轮询（默认 30 秒），避免 PATH `adb` 版本不一致造成假阴性
 
 ## 诊断规则
 
@@ -64,4 +65,10 @@ avdmanager create avd -n Neptune_API_34 -k "system-images;android-34;google_apis
 
 ```bash
 ./scripts/start-simulator-demo.sh
+```
+
+如果要显式控制驻留检查时长或保留 emulator 日志：
+
+```bash
+./scripts/start-simulator-demo.sh --residency-seconds 30 --keep-emulator-log
 ```

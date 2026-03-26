@@ -38,10 +38,18 @@ cp local.properties.example local.properties
 ./scripts/start-simulator-demo.sh
 ```
 
+脚本默认会在启动成功后额外做 30 秒驻留轮询（使用脚本解析出的同一个 `adb`），用于验证 emulator 没有在脚本结束后立即退出。
+
 如果需要先检查脚本会用到哪些路径，可以先运行：
 
 ```bash
 ./scripts/start-simulator-demo.sh --dry-run
+```
+
+如果希望保留 emulator 原始日志文件，或调整驻留轮询时间：
+
+```bash
+./scripts/start-simulator-demo.sh --residency-seconds 30 --keep-emulator-log
 ```
 
 如果需要手工执行，进入 `examples/simulator-app/` 目录后运行：
