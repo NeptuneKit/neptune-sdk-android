@@ -5,7 +5,7 @@ NeptuneKit v2 Android SDK skeleton.
 ## Scope
 - Log queue with stable cursor pagination and optional SQLite persistence.
 - v2 ingest model aligned with the cross-platform contracts.
-- Local HTTP export server backed by Ktor CIO for `GET /v2/export/health`, `GET /v2/export/metrics`, `GET /v2/export/logs`, and `POST /v2/client/command`.
+- Local HTTP export server backed by Ktor CIO for `GET /v2/export/health`, `GET /v2/export/metrics`, `GET /v2/logs`, and `POST /v2/client/command`.
 - Gateway discovery with `mDNS` priority and manual `DSN` fallback.
 - Client registration session that posts to `POST /v2/clients:register` on start and renews every 30 seconds.
 - JVM tests for overflow, pagination, and persistence behavior.
@@ -33,7 +33,7 @@ server.start(8081)
 
 // GET http://127.0.0.1:8081/v2/export/health
 // GET http://127.0.0.1:8081/v2/export/metrics
-// GET http://127.0.0.1:8081/v2/export/logs?cursor=1&limit=50
+// GET http://127.0.0.1:8081/v2/logs?cursor=1&limit=50
 // POST http://127.0.0.1:8081/v2/client/command {"requestId":"req-1","command":"ping"}
 
 server.stop()
@@ -118,7 +118,7 @@ In both modes, the export contract stays the same for:
 
 - `GET /v2/export/health`
 - `GET /v2/export/metrics`
-- `GET /v2/export/logs?cursor&limit`
+- `GET /v2/logs?cursor&limit`
 
 ## Development
 - `./gradlew test` downloads a local Gradle distribution on first use if Gradle is not installed.

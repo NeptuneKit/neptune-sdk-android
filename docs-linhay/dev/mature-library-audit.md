@@ -13,7 +13,7 @@
 - 保持现有导出接口不变：
   - `GET /v2/export/health`
   - `GET /v2/export/metrics`
-  - `GET /v2/export/logs?cursor&limit`
+  - `GET /v2/logs?cursor&limit`
 - 保持现有错误语义不变：
   - 已知路径的非 `GET` 请求返回 `405` JSON 错误
   - 未知路径返回 `404` JSON 错误

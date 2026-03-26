@@ -13,7 +13,7 @@
 - 保持以下导出接口契约不变：
   - `GET /v2/export/health`
   - `GET /v2/export/metrics`
-  - `GET /v2/export/logs?cursor&limit`
+  - `GET /v2/logs?cursor&limit`
 - 默认仍使用内存模式，现有调用方不需要修改代码即可维持当前行为
 - 新增持久化模式，允许把队列数据落到本地 SQLite
 - 持久化模式至少支持：
@@ -35,7 +35,7 @@
 
 - Given 调用方显式创建本地持久化队列
 - When 依次写入多条日志
-- Then `GET /v2/export/logs?cursor&limit` 仍按稳定递增游标返回结果
+- Then `GET /v2/logs?cursor&limit` 仍按稳定递增游标返回结果
 - And `nextCursor` / `hasMore` 语义与内存模式一致
 
 ### 场景 3：持久化模式跨实例保留状态
