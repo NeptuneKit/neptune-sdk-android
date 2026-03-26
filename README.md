@@ -182,8 +182,24 @@ See `examples/simulator-app/README.md` for emulator setup and validation details
 - Trigger:
   - push tag（例如 `v1.2.3` 或 `2026.3.26`）
   - `workflow_dispatch`（支持 `version` 与 `dry_run`）
+- Publish endpoints:
+  - release: `https://ossrh-staging-api.central.sonatype.com/service/local/staging/deploy/maven2/`
+  - snapshot: `https://central.sonatype.com/repository/maven-snapshots/`
 - Required GitHub Secrets:
   - `MAVEN_CENTRAL_USERNAME`
   - `MAVEN_CENTRAL_PASSWORD`
+  - `MAVEN_CENTRAL_NAMESPACE`（通常是 groupId namespace，如 `io.github.linhay`）
   - `MAVEN_SIGNING_KEY`（ASCII-armored private key）
   - `MAVEN_SIGNING_PASSWORD`
+- Notes:
+  - release 发布后，workflow 会自动调用 `manual/upload/defaultRepository/<namespace>` 触发 Central Portal 可见化。
+  - 如仅验证打包链路，可使用 `dry_run=true` 执行 `publishToMavenLocal`。
+
+### Local Publish Config (Generated)
+
+1. 复制环境变量模板：
+   - `cp .env.maven-central.example .env.maven-central`
+2. 填入你的 Central Portal token、namespace 与签名密钥。
+3. 运行脚本：
+   - dry run：`scripts/publish-maven-central-local.sh --dry-run --version 0.1.0`
+   - release：`scripts/publish-maven-central-local.sh --version 0.1.0`
