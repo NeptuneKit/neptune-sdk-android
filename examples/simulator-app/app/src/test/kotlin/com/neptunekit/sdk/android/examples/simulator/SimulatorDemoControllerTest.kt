@@ -23,11 +23,11 @@ class SimulatorDemoControllerTest {
             val afterFirstClick = controller.emitLog()
 
             assertEquals(1, afterFirstClick.clickCount)
-            assertEquals(1, afterFirstClick.health.queueSize)
-            assertEquals(1, afterFirstClick.metrics.queuedRecords)
+            assertEquals(3, afterFirstClick.health.queueSize)
+            assertEquals(3, afterFirstClick.metrics.queuedRecords)
             assertEquals(0L, afterFirstClick.metrics.droppedOverflow)
-            assertEquals(1, afterFirstClick.recentLogs.size)
-            assertEquals("neptune-simulator-click-1", afterFirstClick.recentLogs.single().message)
+            assertEquals(3, afterFirstClick.recentLogs.size)
+            assertEquals("neptune-simulator-batch-1-log-3", afterFirstClick.recentLogs.last().message)
         }
     }
 
@@ -94,6 +94,30 @@ class SimulatorDemoControllerTest {
 
             assertEquals("error", afterDiscovery.gatewayDiscovery.status)
             assertTrue(afterDiscovery.gatewayDiscovery.error.orEmpty().contains("gateway offline"))
+        }
+    }
+
+    @Test
+    fun refreshSnapshotDoesNotMutateQueueOrTriggerNetwork() {
+        val uploadRequests = mutableListOf<SimulatorGatewayIngestRequest>()
+        val ingest = SimulatorGatewayIngestClient { endpoint, record ->
+            uploadRequests += SimulatorGatewayIngestRequest(endpoint, record)
+            SimulatorGatewayIngestResult(
+                requestUrl = endpoint.ingestUrl(),
+                statusCode = 200,
+                responseBody = """{"ok":true}""",
+            )
+        }
+
+        SimulatorDemoController(gatewayIngest = ingest).use { controller ->
+            controller.emitLog()
+            val beforeRefresh = controller.snapshot()
+            val afterRefresh = controller.refreshSnapshot()
+
+            assertEquals(beforeRefresh.clickCount, afterRefresh.clickCount)
+            assertEquals(beforeRefresh.metrics.queuedRecords, afterRefresh.metrics.queuedRecords)
+            assertEquals(beforeRefresh.health.queueSize, afterRefresh.health.queueSize)
+            assertEquals(0, uploadRequests.size)
         }
     }
 

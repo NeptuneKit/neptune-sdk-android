@@ -27,6 +27,7 @@
 7. 通过 Gradle 安装 demo app
 8. 用 `adb shell am start` 启动 `MainActivity`
 9. 在脚本内用同一个 `adb` 做驻留轮询（默认 30 秒），避免 PATH `adb` 版本不一致造成假阴性
+10. 在脚本内 pin `PATH` 到解析出的 `platform-tools`，并可选启用 `--keepalive-seconds` 持续监测与自动重建 `adb forward tcp:28766 -> tcp:18766`
 
 ## 诊断规则
 
@@ -72,3 +73,41 @@ avdmanager create avd -n Neptune_API_34 -k "system-images;android-34;google_apis
 ```bash
 ./scripts/start-simulator-demo.sh --residency-seconds 30 --keep-emulator-log
 ```
+
+如果要在启动成功后继续保活并自愈 forward（推荐用于网关联调）：
+
+```bash
+./scripts/start-simulator-demo.sh --headless --residency-seconds 60 --keepalive-seconds 180 --keep-emulator-log
+```
+
+## 环境重建
+
+如果本机 `adb`、`emulator` 或 AVD 状态本身已经坏掉，先重装 SDK 组件，再重建 AVD：
+
+```bash
+sdkmanager --install emulator platform-tools
+sdkmanager --install "system-images;android-34;google_apis;arm64-v8a"
+adb kill-server
+adb start-server
+```
+
+如果 AVD 反复离线或启动失败，可以删除并重新创建：
+
+```bash
+avdmanager delete avd -n Neptune_API_34
+avdmanager create avd -n Neptune_API_34 -k "system-images;android-34;google_apis;arm64-v8a" -d pixel_7
+```
+
+## 2026-03-27 稳定性专项补充
+
+定位到两类高频风险：
+
+1. 系统中同时存在多个 adb（例如 Homebrew 与 SDK 内），外部命令容易使用到非脚本 adb。
+2. `adb forward` 会在 adb server 抖动后丢失，导致 `127.0.0.1:28766` 回调失效，网关请求 inspector 时出现 connection refused。
+3. 历史离线 emulator（如 `emulator-5554 offline`）会干扰 `-e` 语义，导致部分自动设置命令失败。
+
+脚本侧新增防护：
+
+- 启动后 `pin_adb_path`：将当前脚本进程 `PATH` 前置到解析出的 `ADB_BIN` 所在目录，减少同一流程中的多 adb 混用。
+- 驻留检测期间增加 `ensure_forward`：发现 forward 丢失会立即重建。
+- 新增 `--keepalive-seconds`：启动成功后持续监测 emulator/adb/forward，并在 forward 缺失时自动修复。

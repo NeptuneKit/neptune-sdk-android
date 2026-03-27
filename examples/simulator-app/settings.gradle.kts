@@ -19,7 +19,12 @@ dependencyResolutionManagement {
     }
 }
 
-includeBuild("../..")
+includeBuild("../..") {
+    dependencySubstitution {
+        substitute(module("com.neptunekit.sdk.android:sdk"))
+            .using(project(":sdk"))
+    }
+}
 
 rootProject.name = "neptune-simulator-app"
 include(":app")

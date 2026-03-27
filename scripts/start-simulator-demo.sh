@@ -10,6 +10,8 @@ CALLBACK_HOST_PORT=28766
 CALLBACK_DEVICE_PORT=18766
 BOOT_TIMEOUT_SECONDS=600
 RESIDENCY_SECONDS=30
+KEEPALIVE_SECONDS=0
+KEEPALIVE_INTERVAL_SECONDS=5
 AVD_NAME=""
 LIST_AVDS=0
 DRY_RUN=0
@@ -43,6 +45,9 @@ Options:
   --headless      Launch the emulator in headless mode.
   --residency-seconds N
                   Poll emulator residency with the resolved adb for N seconds after app launch. Use 0 to disable. Default: 30.
+  --keepalive-seconds N
+                  Keep the script alive for N seconds after startup and continuously self-heal adb forward.
+                  Use 0 to disable. Default: 0.
   --keep-emulator-log
                   Keep emulator log file even on successful run.
   --help          Show this help text.
@@ -52,6 +57,7 @@ Environment:
   AVD_NAME
   BOOT_TIMEOUT_SECONDS
   RESIDENCY_SECONDS
+  KEEPALIVE_SECONDS
   KEEP_EMULATOR_LOG
 EOF
 }
@@ -83,6 +89,11 @@ while (($# > 0)); do
     --keep-emulator-log)
       KEEP_EMULATOR_LOG=1
       ;;
+    --keepalive-seconds)
+      shift || die "Missing value after --keepalive-seconds"
+      [ $# -gt 0 ] || die "Missing value after --keepalive-seconds"
+      KEEPALIVE_SECONDS="$1"
+      ;;
     --help|-h)
       usage
       exit 0
@@ -95,6 +106,7 @@ while (($# > 0)); do
 done
 
 RESIDENCY_SECONDS="${RESIDENCY_SECONDS:-30}"
+KEEPALIVE_SECONDS="${KEEPALIVE_SECONDS:-0}"
 KEEP_EMULATOR_LOG="${KEEP_EMULATOR_LOG:-0}"
 
 case "$RESIDENCY_SECONDS" in
@@ -107,6 +119,12 @@ case "$KEEP_EMULATOR_LOG" in
   0|1) ;;
   *)
     die "KEEP_EMULATOR_LOG must be 0 or 1, got: $KEEP_EMULATOR_LOG"
+    ;;
+esac
+
+case "$KEEPALIVE_SECONDS" in
+  ''|*[!0-9]*)
+    die "KEEPALIVE_SECONDS must be a non-negative integer, got: $KEEPALIVE_SECONDS"
     ;;
 esac
 
@@ -163,6 +181,18 @@ if [ ! -x "$ADB_BIN" ]; then
     die "Unable to find adb. Checked $SDK_ROOT/platform-tools/adb and PATH."
   fi
 fi
+
+pin_adb_path() {
+  local adb_dir
+  adb_dir="$(cd "$(dirname "$ADB_BIN")" && pwd)"
+  case ":$PATH:" in
+    *":$adb_dir:"*) ;;
+    *)
+      export PATH="$adb_dir:$PATH"
+      ;;
+  esac
+  hash -r 2>/dev/null || true
+}
 
 list_avds() {
   "$EMULATOR_BIN" -list-avds 2>/dev/null | sed '/^$/d'
@@ -331,6 +361,24 @@ warn_if_adb_mismatch() {
   warn "Use '$ADB_BIN devices -l' when checking residency for consistent results."
 }
 
+forward_exists() {
+  local serial="$1"
+  "$ADB_BIN" forward --list 2>/dev/null | awk -v serial="$serial" -v host="tcp:${CALLBACK_HOST_PORT}" -v device="tcp:${CALLBACK_DEVICE_PORT}" '
+    $1 == serial && $2 == host && $3 == device { found=1 }
+    END { exit found ? 0 : 1 }
+  '
+}
+
+ensure_forward() {
+  local serial="$1"
+  if forward_exists "$serial"; then
+    return 0
+  fi
+
+  warn "adb forward missing for $serial, rebuilding tcp:${CALLBACK_HOST_PORT}->tcp:${CALLBACK_DEVICE_PORT}."
+  "$ADB_BIN" -s "$serial" forward "tcp:${CALLBACK_HOST_PORT}" "tcp:${CALLBACK_DEVICE_PORT}"
+}
+
 verify_residency() {
   local serial="$1"
   local pid="$2"
@@ -364,11 +412,55 @@ verify_residency() {
       warn "adb devices line: ${line:-<missing>}"
       return 1
     fi
+    ensure_forward "$serial"
     sleep "$interval"
     i=$((i + 1))
   done
 
   info "Emulator residency verified for ${seconds}s."
+}
+
+keepalive_monitor() {
+  local serial="$1"
+  local pid="$2"
+  local seconds="$3"
+  local interval="$KEEPALIVE_INTERVAL_SECONDS"
+  local polls=1
+  local i=1
+  local state=""
+
+  if [ "$seconds" -le 0 ]; then
+    info "Keepalive monitor disabled (KEEPALIVE_SECONDS=$seconds)."
+    return 0
+  fi
+
+  polls=$((seconds / interval))
+  if [ "$polls" -lt 1 ]; then
+    polls=1
+  fi
+
+  info "Keepalive monitor running for ${seconds}s (interval ${interval}s)."
+  while [ "$i" -le "$polls" ]; do
+    if ! kill -0 "$pid" >/dev/null 2>&1; then
+      warn "Keepalive failed: emulator process exited during poll $i/$polls."
+      return 1
+    fi
+
+    state="$("$ADB_BIN" -s "$serial" get-state 2>/dev/null || true)"
+    if [ "$state" != "device" ]; then
+      warn "Keepalive detected adb state '${state:-<empty>}' on poll $i/$polls, waiting for reconnection."
+      if ! wait_for_adb_online "$serial"; then
+        warn "Keepalive failed: adb did not recover before timeout."
+        return 1
+      fi
+    fi
+
+    ensure_forward "$serial"
+    sleep "$interval"
+    i=$((i + 1))
+  done
+
+  info "Keepalive monitor completed."
 }
 
 if [ "$LIST_AVDS" -eq 1 ]; then
@@ -389,6 +481,7 @@ if [ "$DRY_RUN" -eq 1 ]; then
   info "Selected AVD: $AVD_TO_RUN"
   info "Selected adb serial: $ADB_SERIAL"
   info "Residency check seconds: $RESIDENCY_SECONDS"
+  info "Keepalive monitor seconds: $KEEPALIVE_SECONDS"
   info "Keep emulator log on success: $KEEP_EMULATOR_LOG"
   info "Launch mode: $WINDOW_MODE"
   info "Would install demo app from: $APP_DIR"
@@ -430,6 +523,7 @@ fi
 
 info "Resolved SDK root: $SDK_ROOT"
 info "Resolved adb: $ADB_BIN"
+pin_adb_path
 warn_if_adb_mismatch
 info "Starting emulator for AVD: $AVD_TO_RUN"
 info "ADB serial will be: $ADB_SERIAL"
@@ -468,5 +562,6 @@ info "Launching demo activity."
 "$ADB_BIN" -s "$ADB_SERIAL" shell am start -W -n "$APP_ID/$APP_ACTIVITY"
 
 verify_residency "$ADB_SERIAL" "$EMULATOR_PID" "$RESIDENCY_SECONDS"
+keepalive_monitor "$ADB_SERIAL" "$EMULATOR_PID" "$KEEPALIVE_SECONDS"
 
 info "Demo app started successfully on $ADB_SERIAL."

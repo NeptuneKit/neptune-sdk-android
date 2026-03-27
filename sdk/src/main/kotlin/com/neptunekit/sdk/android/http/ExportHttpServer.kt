@@ -3,8 +3,12 @@ package com.neptunekit.sdk.android.http
 import com.neptunekit.sdk.android.export.ExportMetrics
 import com.neptunekit.sdk.android.export.ExportService
 import com.neptunekit.sdk.android.export.ServiceHealth
+import com.neptunekit.sdk.android.model.InspectorSnapshot
 import com.neptunekit.sdk.android.model.ExportLogRecord
+import com.neptunekit.sdk.android.viewtree.ViewTreeCollector
+import com.neptunekit.sdk.android.viewtree.ViewTreeQuery
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.JsonNodeFactory
 import com.fasterxml.jackson.databind.node.ObjectNode
 import io.ktor.http.ContentType
@@ -22,6 +26,7 @@ import io.ktor.server.request.receiveText
 import io.ktor.server.response.respondText
 import io.ktor.util.pipeline.PipelinePhase
 import java.io.Closeable
+import java.time.Instant
 
 internal const val DEFAULT_BIND_HOST = "0.0.0.0"
 private const val MAX_LENGTH = 10_000
@@ -39,6 +44,13 @@ data class ExportQueryParameters(
     val length: Int?,
 )
 
+data class ViewTreeQueryParameters(
+    val platform: String?,
+    val appId: String?,
+    val sessionId: String?,
+    val deviceId: String?,
+)
+
 data class ExportHttpResult(
     val statusCode: Int,
     val body: String,
@@ -47,8 +59,9 @@ data class ExportHttpResult(
 class ExportHttpServer(
     private val service: ExportService,
     val host: String = DEFAULT_BIND_HOST,
+    private val viewTreeCollector: ViewTreeCollector? = null,
 ) : Closeable {
-    private val router = ExportHttpRouter(service)
+    private val router = ExportHttpRouter(service, viewTreeCollector = viewTreeCollector)
     private var server: ApplicationEngine? = null
 
     @Synchronized
@@ -83,6 +96,7 @@ class ExportHttpServer(
 internal class ExportHttpRouter(
     private val service: ExportService,
     private val messageBus: ClientMessageBus = ClientMessageBus(),
+    private val viewTreeCollector: ViewTreeCollector? = null,
 ) {
     fun handle(
         method: String,
@@ -114,6 +128,10 @@ internal class ExportHttpRouter(
             "/v2/logs" -> {
                 val query = parseExportQueryParameters(parameters)
                 jsonOk(logsJson(service.logs(cursor = query.cursor, limit = query.length ?: Int.MAX_VALUE)))
+            }
+            "/v2/ui-tree/inspector" -> {
+                val query = parseViewTreeQueryParameters(parameters)
+                jsonOk(viewTreeInspectorJson(query, viewTreeCollector))
             }
 
             else -> jsonError(
@@ -182,6 +200,14 @@ internal fun parseExportQueryParameters(parameters: Map<String, List<String>>): 
     return ExportQueryParameters(cursor = cursor, length = length)
 }
 
+internal fun parseViewTreeQueryParameters(parameters: Map<String, List<String>>): ViewTreeQueryParameters =
+    ViewTreeQueryParameters(
+        platform = parameters.firstValue("platform")?.takeIf { it.isNotBlank() },
+        appId = parameters.firstValue("appId")?.takeIf { it.isNotBlank() },
+        sessionId = parameters.firstValue("sessionId")?.takeIf { it.isNotBlank() },
+        deviceId = parameters.firstValue("deviceId")?.takeIf { it.isNotBlank() },
+    )
+
 private fun jsonOk(body: String): ExportHttpResult =
     ExportHttpResult(statusCode = HTTP_STATUS_OK, body = body)
 
@@ -223,6 +249,63 @@ private fun logsJson(page: com.neptunekit.sdk.android.core.LogPage): String =
             page.records.forEach { records.add(recordJson(it)) }
             put("hasMore", page.hasMore)
         },
+    )
+
+private fun viewTreeInspectorJson(
+    query: ViewTreeQueryParameters,
+    collector: ViewTreeCollector? = null,
+): String {
+    val platform = normalizePlatform(query.platform, fallback = "android")
+    val snapshot = collector?.captureInspector(query.toViewTreeQuery())
+        ?: unavailableInspectorSnapshot(
+            platform = platform,
+            reason = "ViewTreeCollector is not configured.",
+        )
+    return inspectorSnapshotJson(snapshot)
+}
+
+private fun unavailableInspectorSnapshot(platform: String, reason: String): InspectorSnapshot =
+    InspectorSnapshot(
+        snapshotId = "$platform-inspector-${System.currentTimeMillis()}",
+        capturedAt = Instant.now().toString(),
+        platform = platform,
+        available = false,
+        payload = null,
+        reason = reason,
+    )
+
+private fun inspectorSnapshotJson(snapshot: InspectorSnapshot): String =
+    jsonMapper.writeValueAsString(
+        objectNode().apply {
+            put("snapshotId", snapshot.snapshotId)
+            put("capturedAt", snapshot.capturedAt)
+            put("platform", snapshot.platform)
+            put("available", snapshot.available)
+            when (val payload = snapshot.payload) {
+                null -> putNull("payload")
+                else -> set<JsonNode>("payload", normalizeInspectorPayload(payload))
+            }
+            snapshot.reason?.let { put("reason", it) } ?: putNull("reason")
+        },
+    )
+
+private fun normalizeInspectorPayload(payload: Any): JsonNode =
+    when (payload) {
+        is JsonNode -> payload
+        is String -> jsonMapper.readTree(payload)
+        else -> jsonMapper.valueToTree(payload)
+    }.also { node ->
+        require(node.isObject || node.isArray) {
+            "Inspector payload must be a JSON object or array."
+        }
+    }
+
+private fun ViewTreeQueryParameters.toViewTreeQuery(): ViewTreeQuery =
+    ViewTreeQuery(
+        platform = platform,
+        appId = appId,
+        sessionId = sessionId,
+        deviceId = deviceId,
     )
 
 private fun busAckJson(ack: BusAck): String =
@@ -296,4 +379,12 @@ private fun com.fasterxml.jackson.databind.JsonNode.requiredText(name: String): 
 private fun com.fasterxml.jackson.databind.JsonNode.optionalText(name: String): String? {
     val value = this[name]?.asText()?.trim().orEmpty()
     return value.ifBlank { null }
+}
+
+private fun normalizePlatform(value: String?, fallback: String): String {
+    val normalized = value?.trim()?.lowercase().orEmpty()
+    return when (normalized) {
+        "ios", "android", "harmony", "web" -> normalized
+        else -> fallback
+    }
 }

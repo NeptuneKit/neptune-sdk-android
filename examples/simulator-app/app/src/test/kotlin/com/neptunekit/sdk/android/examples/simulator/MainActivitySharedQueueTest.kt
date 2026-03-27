@@ -22,7 +22,7 @@ class MainActivitySharedQueueTest {
 
             val body = getText("http://127.0.0.1:$port/v2/logs?cursor=0&limit=10")
             assertTrue(
-                body.contains("neptune-simulator-click-1"),
+                body.contains("neptune-simulator-batch-1-log-1"),
                 "expected callback /v2/logs to expose emitted log, actual body=$body",
             )
         } finally {

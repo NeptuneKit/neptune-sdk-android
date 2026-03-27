@@ -80,27 +80,30 @@ class SimulatorDemoController(
 
     fun emitLog(): SimulatorDemoUiState {
         val index = clickCount.incrementAndGet()
-        val message = "neptune-simulator-click-$index"
-
-        service.ingest(
-            IngestLogRecord(
-                timestamp = Instant.now().toString(),
-                level = LogLevel.INFO,
-                message = message,
-                platform = Platform.ANDROID,
-                appId = "com.neptunekit.sdk.android.examples.simulator",
-                sessionId = "simulator-session",
-                deviceId = "simulator-device",
-                category = "demo",
-                attributes = mapOf(
-                    "clickIndex" to index.toString(),
-                    "surface" to "emulator",
+        repeat(3) { offset ->
+            service.ingest(
+                IngestLogRecord(
+                    timestamp = Instant.now().toString(),
+                    level = LogLevel.INFO,
+                    message = "neptune-simulator-batch-$index-log-${offset + 1}",
+                    platform = Platform.ANDROID,
+                    appId = "com.neptunekit.sdk.android.examples.simulator",
+                    sessionId = "simulator-session",
+                    deviceId = "simulator-device",
+                    category = "demo",
+                    attributes = mapOf(
+                        "batchIndex" to index.toString(),
+                        "batchOffset" to (offset + 1).toString(),
+                        "surface" to "emulator",
+                    ),
                 ),
-            ),
-        )
+            )
+        }
 
         return snapshot()
     }
+
+    fun refreshSnapshot(): SimulatorDemoUiState = snapshot()
 
     fun discoverGateway(manualDsn: String = DEFAULT_GATEWAY_DSN): SimulatorDemoUiState {
         try {

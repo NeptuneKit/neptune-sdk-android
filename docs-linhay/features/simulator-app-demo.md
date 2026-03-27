@@ -18,8 +18,9 @@
 
 - Demo 工程可独立配置并编译
 - Demo Activity 至少包含：
-  - 一个“发现网关”按钮
-  - 一个“写入日志”按钮
+  - 一个“写入日志批次”按钮
+  - 一个“发现并上报”按钮
+  - 一个“刷新快照”按钮
   - 一个显示 metrics / health 的文本区域
 - 发现网关后：
   - 通过 Neptune SDK discovery 入口发现 CLI 网关
@@ -47,19 +48,26 @@
 ### 场景 2：按钮触发 SDK 写日志
 
 - Given Demo 已启动并持有 `ExportService`
-- When 用户点击“写入日志”按钮
-- Then SDK 接收到一条 `IngestLogRecord`
+- When 用户点击“写入日志批次”按钮
+- Then SDK 接收到一批 `IngestLogRecord`
 - And metrics / queue size 随之更新
 
 ### 场景 3：按钮触发网关发现
 
 - Given Demo 已启动且可以访问本地 CLI 网关
-- When 用户点击“发现网关”按钮
+- When 用户点击“发现并上报”按钮
 - Then Demo 调用 discovery 入口并返回 `source / host / port / version`
 - And 若发现成功，自动调用 `POST /v2/logs:ingest`
 - And 文本区域显示发现结果、上传结果或错误原因
 
-### 场景 4：Demo 可用于人工冒烟
+### 场景 4：刷新快照不触发新动作
+
+- Given Demo 当前已有一组 UI 状态
+- When 用户点击“刷新快照”按钮
+- Then 仅刷新屏幕展示
+- And 不新增日志、不触发 discovery、不触发 ingest
+
+### 场景 5：Demo 可用于人工冒烟
 
 - Given Demo 已安装并启动到 Emulator
 - When 用户点击按钮并查看输出

@@ -52,6 +52,12 @@ cp local.properties.example local.properties
 ./scripts/start-simulator-demo.sh --residency-seconds 30 --keep-emulator-log
 ```
 
+如果网关联调时担心 adb forward 丢失，建议开启保活监测：
+
+```bash
+./scripts/start-simulator-demo.sh --headless --residency-seconds 60 --keepalive-seconds 180 --keep-emulator-log
+```
+
 如果需要手工执行，进入 `examples/simulator-app/` 目录后运行：
 
 ```bash
@@ -67,6 +73,24 @@ adb shell am start -n com.neptunekit.sdk.android.examples.simulator/.MainActivit
 
 当前脚本和手工流程都依赖有效 SDK 根目录。仓库内 `examples/simulator-app/local.properties` 会优先提供 `sdk.dir`，也可以改用 `ANDROID_SDK_ROOT` / `ANDROID_HOME`。
 
+## 环境修复
+
+当 `emulator`、`adb` 或 AVD 状态异常时，优先按下面顺序重建环境：
+
+```bash
+sdkmanager --install emulator platform-tools
+sdkmanager --install "system-images;android-34;google_apis;arm64-v8a"
+adb kill-server
+adb start-server
+```
+
+如果 AVD 损坏或反复离线，可以先删掉旧 AVD，再重新创建：
+
+```bash
+avdmanager delete avd -n Neptune_API_34
+avdmanager create avd -n Neptune_API_34 -k "system-images;android-34;google_apis;arm64-v8a" -d pixel_7
+```
+
 ## 验证方式
 
 ### 方式 -1：启动即连 WebSocket
@@ -75,7 +99,7 @@ App 启动后会自动尝试连接 `ws://10.0.2.2:18765/v2/ws`，发送 `hello(r
 
 ### 方式 0：Gateway discovery
 
-先点击“发现网关”按钮，Demo 会尝试按 `mDNS -> manual DSN -> /v2/gateway/discovery` 的顺序发现 CLI 网关。
+点击“发现并上报”按钮后，Demo 会尝试按 `mDNS -> manual DSN -> /v2/gateway/discovery` 的顺序发现 CLI 网关。
 如果发现成功，Demo 会立即向该网关 `POST /v2/logs:ingest` 上传一条结构化日志，并把上传结果显示在界面和 `adb logcat` 中。
 
 - 默认 manual DSN: `10.0.2.2:18765`（Android Emulator 访问宿主机 loopback 的固定地址）
@@ -85,7 +109,7 @@ App 启动后会自动尝试连接 `ws://10.0.2.2:18765/v2/ws`，发送 `hello(r
 
 ### 方式 1：adb logcat
 
-点击 Demo 中的“写入日志”按钮后，过滤日志：
+点击 Demo 中的“写入日志批次”按钮后，过滤日志：
 
 ```bash
 adb logcat | rg NeptuneSimulatorDemo

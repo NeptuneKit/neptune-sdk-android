@@ -8,6 +8,9 @@ import com.neptunekit.sdk.android.createExportService
 import com.neptunekit.sdk.android.examples.simulator.databinding.ActivityMainBinding
 import com.neptunekit.sdk.android.discovery.GatewayDiscoveryEndpoint
 import com.neptunekit.sdk.android.http.ExportHttpServer
+import com.neptunekit.sdk.android.viewtree.HttpUrlConnectionGatewayRawUiTreeUploader
+import com.neptunekit.sdk.android.viewtree.RawUiTreeIngestRequest
+import com.neptunekit.sdk.android.viewtree.ViewTreeQuery
 import com.neptunekit.sdk.android.ws.GatewayWebSocketClient
 
 private const val TAG = "NeptuneSimulatorDemo"
@@ -25,8 +28,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private val sharedExportService by lazy { createExportService(queueCapacity = 16) }
     private val controller by lazy { SimulatorDemoController(service = sharedExportService) }
+    private val viewTreeCollector by lazy { AndroidViewTreeCollector { this } }
+    private val rawUiTreeUploader by lazy { HttpUrlConnectionGatewayRawUiTreeUploader() }
     private val callbackHttpServer by lazy {
-        ExportHttpServer(sharedExportService, host = "0.0.0.0")
+        ExportHttpServer(
+            sharedExportService,
+            host = "0.0.0.0",
+            viewTreeCollector = viewTreeCollector,
+        )
     }
     private val registrationSession by lazy {
         createClientRegistrationSession(
@@ -83,7 +92,7 @@ class MainActivity : AppCompatActivity() {
             val state = controller.emitLog()
             Log.i(
                 TAG,
-                "emitLog clickCount=${state.clickCount} queuedRecords=${state.metrics.queuedRecords} " +
+                "writeBatch clickCount=${state.clickCount} queuedRecords=${state.metrics.queuedRecords} " +
                     "droppedOverflow=${state.metrics.droppedOverflow} queueSize=${state.health.queueSize}",
             )
             render(state)
@@ -113,39 +122,109 @@ class MainActivity : AppCompatActivity() {
                         state.gatewayIngest.error?.let { append(" error=$it") }
                     },
                 )
+                uploadRawInspectorSnapshotIfPossible(state)
                 runOnUiThread {
                     binding.discoverGatewayButton.isEnabled = true
                     render(state)
                 }
             }.start()
         }
+
+        binding.refreshSnapshotButton.setOnClickListener {
+            val state = controller.refreshSnapshot()
+            Log.i(
+                TAG,
+                "refreshSnapshot clickCount=${state.clickCount} queuedRecords=${state.metrics.queuedRecords} " +
+                    "droppedOverflow=${state.metrics.droppedOverflow} queueSize=${state.health.queueSize}",
+            )
+            render(state)
+        }
     }
 
     private fun render(state: SimulatorDemoUiState) {
-        binding.queueStatusText.text = buildString {
-            appendLine("Clicks: ${state.clickCount}")
-            appendLine("Health: ok=${state.health.ok} capacity=${state.health.queueCapacity} size=${state.health.queueSize}")
-            appendLine("Metrics: queuedRecords=${state.metrics.queuedRecords} droppedOverflow=${state.metrics.droppedOverflow}")
-            appendLine("Gateway discovery:")
-            appendLine("  status=${state.gatewayDiscovery.status}")
-            state.gatewayDiscovery.source?.let { appendLine("  source=$it") }
-            state.gatewayDiscovery.host?.let { appendLine("  host=$it") }
-            state.gatewayDiscovery.port?.let { appendLine("  port=$it") }
-            state.gatewayDiscovery.version?.let { appendLine("  version=$it") }
-            state.gatewayDiscovery.error?.let { appendLine("  error=$it") }
-            appendLine("Gateway ingest:")
-            appendLine("  status=${state.gatewayIngest.status}")
-            state.gatewayIngest.endpoint?.let { appendLine("  endpoint=$it") }
-            state.gatewayIngest.responseCode?.let { appendLine("  responseCode=$it") }
-            state.gatewayIngest.error?.let { appendLine("  error=$it") }
-            appendLine("Recent logs:")
-            if (state.recentLogs.isEmpty()) {
-                appendLine("- none yet")
+        binding.bannerChip.text = when (state.gatewayDiscovery.status) {
+            "ok" -> "discover ok"
+            "error" -> "discover failed"
+            else -> "ready"
+        }
+        binding.batchChip.text = "batch #${state.clickCount}"
+
+        binding.gatewayDiscoveryText.text = buildString {
+            append("status=${state.gatewayDiscovery.status}")
+            state.gatewayDiscovery.source?.let { append("  source=$it") }
+            state.gatewayDiscovery.host?.let { append("  host=$it") }
+            state.gatewayDiscovery.port?.let { append("  port=$it") }
+            state.gatewayDiscovery.version?.let { append("  version=$it") }
+            state.gatewayDiscovery.error?.let { append("  error=$it") }
+        }
+
+        binding.gatewayIngestText.text = buildString {
+            append("ingest status=${state.gatewayIngest.status}")
+            state.gatewayIngest.endpoint?.let { append("  endpoint=$it") }
+            state.gatewayIngest.responseCode?.let { append("  response=$it") }
+            state.gatewayIngest.error?.let { append("  error=$it") }
+        }
+        binding.sourcesText.text = buildString {
+            if (state.gatewayDiscovery.status == "ok") {
+                append("source=${state.gatewayDiscovery.source ?: "unknown"}")
+                state.gatewayDiscovery.host?.let { append(" host=$it") }
+                state.gatewayDiscovery.port?.let { append(":$it") }
             } else {
-                state.recentLogs.forEach { logLine ->
-                    appendLine("- #${logLine.id} ${logLine.level} ${logLine.message}")
-                }
+                append("no source yet")
             }
+        }
+
+        binding.queueStatusText.text = buildString {
+            appendLine("queueSize=${state.health.queueSize}")
+            appendLine("totalIngested=${state.metrics.queuedRecords}")
+            appendLine("droppedOverflow=${state.metrics.droppedOverflow}")
+            appendLine("totalExported=${state.metrics.queuedRecords}")
+        }
+
+        binding.recentLogsText.text = if (state.recentLogs.isEmpty()) {
+            "- none yet"
+        } else {
+            state.recentLogs.joinToString(separator = "\n") { logLine ->
+                "- #${logLine.id} ${logLine.level} ${logLine.message}"
+            }
+        }
+    }
+
+    private fun uploadRawInspectorSnapshotIfPossible(state: SimulatorDemoUiState) {
+        if (state.gatewayDiscovery.status != "ok") {
+            return
+        }
+        val host = state.gatewayDiscovery.host ?: return
+        val port = state.gatewayDiscovery.port ?: return
+        val endpoint = GatewayDiscoveryEndpoint(host = host, port = port)
+
+        val query = ViewTreeQuery(
+            platform = SIMULATOR_PLATFORM,
+            appId = SIMULATOR_APP_ID,
+            sessionId = SIMULATOR_SESSION_ID,
+            deviceId = SIMULATOR_DEVICE_ID,
+        )
+
+        val snapshot = runCatching { viewTreeCollector.captureInspector(query) }.getOrNull() ?: return
+        if (!snapshot.available || snapshot.payload == null) {
+            return
+        }
+
+        val request = RawUiTreeIngestRequest(
+            platform = snapshot.platform,
+            appId = SIMULATOR_APP_ID,
+            sessionId = SIMULATOR_SESSION_ID,
+            deviceId = SIMULATOR_DEVICE_ID,
+            snapshotId = snapshot.snapshotId,
+            capturedAt = snapshot.capturedAt,
+            payload = snapshot.payload,
+        )
+
+        try {
+            val result = rawUiTreeUploader.upload(endpoint, request)
+            Log.i(TAG, "raw ui tree uploaded status=${result.statusCode} endpoint=${result.requestUrl}")
+        } catch (error: Throwable) {
+            Log.w(TAG, "raw ui tree upload failed endpoint=${endpoint.host}:${endpoint.port}", error)
         }
     }
 

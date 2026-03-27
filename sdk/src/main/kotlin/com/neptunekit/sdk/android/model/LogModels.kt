@@ -68,6 +68,59 @@ data class ExportLogRecord(
     val source: LogSource? = null,
 )
 
+data class ViewTreeNode(
+    val frame: ViewTreeFrame? = null,
+    val style: ViewTreeStyle? = null,
+    val text: String? = null,
+    val visible: Boolean? = null,
+    val id: String,
+    val parentId: String? = null,
+    val name: String,
+    val children: List<ViewTreeNode> = emptyList(),
+)
+
+data class ViewTreeFrame(
+    val x: Double,
+    val y: Double,
+    val width: Double,
+    val height: Double,
+)
+
+data class ViewTreeStyle(
+    val opacity: Double? = null,
+    val backgroundColor: String? = null,
+    val textColor: String? = null,
+    val typographyUnit: String? = null,
+    val sourceTypographyUnit: String? = null,
+    val platformFontScale: Double? = null,
+    val fontSize: Double? = null,
+    val lineHeight: Double? = null,
+    val letterSpacing: Double? = null,
+    val fontWeight: String? = null,
+    val fontWeightRaw: String? = null,
+    val borderRadius: Double? = null,
+    val borderWidth: Double? = null,
+    val borderColor: String? = null,
+    val zIndex: Double? = null,
+    val textAlign: String? = null,
+)
+
+data class ViewTreeSnapshot(
+    val snapshotId: String,
+    val capturedAt: String,
+    val platform: String,
+    val roots: List<ViewTreeNode>,
+)
+
+data class InspectorSnapshot(
+    val snapshotId: String,
+    val capturedAt: String,
+    val platform: String,
+    val available: Boolean,
+    val payload: Any?,
+    val reason: String? = null,
+)
+
 internal fun Long.toExportLogRecord(record: IngestLogRecord): ExportLogRecord =
     ExportLogRecord(
         id = this,

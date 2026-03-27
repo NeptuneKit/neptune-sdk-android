@@ -7,6 +7,7 @@ import com.neptunekit.sdk.android.discovery.GatewayDiscoveryEndpoint
 import com.neptunekit.sdk.android.export.ExportService
 import com.neptunekit.sdk.android.http.DEFAULT_BIND_HOST
 import com.neptunekit.sdk.android.http.ExportHttpServer
+import com.neptunekit.sdk.android.viewtree.ViewTreeCollector
 import com.neptunekit.sdk.android.registration.ClientIdentity
 import com.neptunekit.sdk.android.registration.ClientRegistrationSession
 import com.neptunekit.sdk.android.registration.ClientUSBMuxdHint
@@ -22,8 +23,13 @@ fun createExportService(queueCapacity: Int = DEFAULT_QUEUE_CAPACITY): ExportServ
 fun createExportHttpServer(
     queueCapacity: Int = DEFAULT_QUEUE_CAPACITY,
     host: String = DEFAULT_BIND_HOST,
+    viewTreeCollector: ViewTreeCollector? = null,
 ): ExportHttpServer =
-    ExportHttpServer(createExportService(queueCapacity), host = host)
+    ExportHttpServer(
+        createExportService(queueCapacity),
+        host = host,
+        viewTreeCollector = viewTreeCollector,
+    )
 
 fun createPersistentExportService(
     databasePath: Path,
@@ -34,12 +40,14 @@ fun createPersistentExportHttpServer(
     databasePath: Path,
     queueCapacity: Int = DEFAULT_QUEUE_CAPACITY,
     host: String = DEFAULT_BIND_HOST,
+    viewTreeCollector: ViewTreeCollector? = null,
 ): ExportHttpServer = ExportHttpServer(
     createPersistentExportService(
         databasePath = databasePath,
         queueCapacity = queueCapacity,
     ),
     host = host,
+    viewTreeCollector = viewTreeCollector,
 )
 
 fun createGatewayDiscovery(): GatewayDiscovery = GatewayDiscovery()

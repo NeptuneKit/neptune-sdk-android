@@ -5,6 +5,11 @@ import com.neptunekit.sdk.android.export.ExportService
 import com.neptunekit.sdk.android.model.IngestLogRecord
 import com.neptunekit.sdk.android.model.LogLevel
 import com.neptunekit.sdk.android.model.Platform
+import com.neptunekit.sdk.android.model.InspectorSnapshot
+import com.neptunekit.sdk.android.model.ViewTreeFrame
+import com.neptunekit.sdk.android.model.ViewTreeStyle
+import com.neptunekit.sdk.android.viewtree.ViewTreeCollector
+import com.neptunekit.sdk.android.viewtree.ViewTreeQuery
 import com.fasterxml.jackson.databind.ObjectMapper
 import java.time.Duration
 import java.net.ServerSocket
@@ -102,6 +107,148 @@ class ExportHttpServerTest {
     }
 
     @Test
+    fun viewTreeSnapshotEndpointReturnsNotFound() {
+        val response = router.handle(
+            method = "GET",
+            path = "/v2/ui-tree/snapshot",
+            parameters = mapOf(
+                "platform" to listOf("android"),
+                "appId" to listOf("demo.app"),
+                "sessionId" to listOf("s-1"),
+                "deviceId" to listOf("d-1"),
+            ),
+        )
+
+        assertEquals(404, response.statusCode)
+
+        val payload = mapper.readTree(response.body)
+        assertFalse(payload["ok"]!!.asBoolean())
+        assertEquals("not_found", payload["error"]!!["code"]!!.asText())
+        assertEquals("Unknown export endpoint.", payload["error"]!!["message"]!!.asText())
+    }
+
+    @Test
+    fun viewTreeInspectorEndpointReturnsUnavailableWhenCollectorMissing() {
+        val response = router.handle(
+            method = "GET",
+            path = "/v2/ui-tree/inspector",
+            parameters = mapOf(
+                "platform" to listOf("android"),
+                "deviceId" to listOf("d-1"),
+            ),
+        )
+
+        assertEquals(200, response.statusCode)
+
+        val payload = mapper.readTree(response.body)
+        assertFalse(payload["available"]!!.asBoolean())
+        assertTrue(payload["payload"]!!.isNull)
+        assertTrue(payload["reason"]!!.asText().isNotBlank())
+    }
+
+    @Test
+    fun viewTreeInspectorEndpointReturnsObjectPayloadFromCollector() {
+        val collector = RecordingViewTreeCollector(
+            inspector = InspectorSnapshot(
+                snapshotId = "inspector-123",
+                capturedAt = "2026-03-27T00:00:00Z",
+                platform = "android",
+                available = true,
+                payload = FakeInspectorPayload(
+                    roots = listOf(
+                        FakeInspectorNode(
+                            id = "root",
+                            className = "android.widget.FrameLayout",
+                            text = "root text",
+                            style = ViewTreeStyle(
+                                typographyUnit = "dp",
+                                sourceTypographyUnit = "sp",
+                                platformFontScale = 1.0,
+                                fontSize = 14.0,
+                                lineHeight = 18.0,
+                                letterSpacing = 0.75,
+                                fontWeightRaw = "style=0,fakeBold=false",
+                            ),
+                            children = listOf(
+                                FakeInspectorNode(
+                                    id = "child",
+                                    className = "android.widget.TextView",
+                                    text = "child text",
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val router = ExportHttpRouter(service, messageBus = ClientMessageBus(), viewTreeCollector = collector)
+
+        val response = router.handle(
+            method = "GET",
+            path = "/v2/ui-tree/inspector",
+            parameters = mapOf(
+                "platform" to listOf("android"),
+                "deviceId" to listOf("d-collector"),
+            ),
+        )
+
+        assertEquals(200, response.statusCode)
+        assertEquals(
+            ViewTreeQuery(
+                platform = "android",
+                appId = null,
+                sessionId = null,
+                deviceId = "d-collector",
+            ),
+            collector.inspectorQueries.single(),
+        )
+
+        val payload = mapper.readTree(response.body)
+        assertTrue(payload["available"]!!.asBoolean())
+        assertTrue(payload["payload"]!!.isObject)
+        assertEquals("root text", payload["payload"]!!["roots"]!![0]["text"]!!.asText())
+        assertEquals("dp", payload["payload"]!!["roots"]!![0]["style"]!!["typographyUnit"]!!.asText())
+        assertEquals("sp", payload["payload"]!!["roots"]!![0]["style"]!!["sourceTypographyUnit"]!!.asText())
+        assertEquals(1.0, payload["payload"]!!["roots"]!![0]["style"]!!["platformFontScale"]!!.asDouble())
+        assertEquals(14.0, payload["payload"]!!["roots"]!![0]["style"]!!["fontSize"]!!.asDouble())
+        assertEquals(18.0, payload["payload"]!!["roots"]!![0]["style"]!!["lineHeight"]!!.asDouble())
+        assertEquals(0.75, payload["payload"]!!["roots"]!![0]["style"]!!["letterSpacing"]!!.asDouble())
+        assertEquals("style=0,fakeBold=false", payload["payload"]!!["roots"]!![0]["style"]!!["fontWeightRaw"]!!.asText())
+        assertEquals("child text", payload["payload"]!!["roots"]!![0]["children"]!![0]["text"]!!.asText())
+    }
+
+    @Test
+    fun viewTreeInspectorEndpointParsesStringifiedJsonPayloadIntoJsonNode() {
+        val collector = RecordingViewTreeCollector(
+            inspector = InspectorSnapshot(
+                snapshotId = "inspector-456",
+                capturedAt = "2026-03-27T00:00:00Z",
+                platform = "android",
+                available = true,
+                payload = """{"roots":[{"id":"root","children":[{"id":"child"}]}]}""",
+            ),
+        )
+        val router = ExportHttpRouter(service, messageBus = ClientMessageBus(), viewTreeCollector = collector)
+
+        val response = router.handle(
+            method = "GET",
+            path = "/v2/ui-tree/inspector",
+            parameters = mapOf(
+                "platform" to listOf("android"),
+                "deviceId" to listOf("d-collector"),
+            ),
+        )
+
+        assertEquals(200, response.statusCode)
+
+        val payload = mapper.readTree(response.body)
+        assertTrue(payload["payload"]!!.isObject)
+        assertFalse(payload["payload"]!!.isTextual)
+        assertEquals("root", payload["payload"]!!["roots"]!![0]["id"]!!.asText())
+        assertEquals("child", payload["payload"]!!["roots"]!![0]["children"]!![0]["id"]!!.asText())
+    }
+
+    @Test
     fun unsupportedMethodReturnsJsonError() {
         val response = router.handle("POST", "/v2/export/health", emptyMap())
 
@@ -189,6 +336,25 @@ class ExportHttpServerTest {
     }
 
     @Test
+    fun embeddedServerReturnsNotFoundForSnapshotEndpointOverHttp() {
+        val port = findAvailablePort()
+        val server = ExportHttpServer(service)
+        this.server = server
+        server.start(port)
+
+        val response = eventuallyRequest(
+            method = "GET",
+            port = port,
+            path = "/v2/ui-tree/snapshot?platform=android&appId=demo.app&sessionId=s-http",
+        )
+
+        assertEquals(404, response.statusCode())
+        val payload = mapper.readTree(response.body())
+        assertFalse(payload["ok"]!!.asBoolean())
+        assertEquals("not_found", payload["error"]!!["code"]!!.asText())
+    }
+
+    @Test
     fun defaultServerBindingUsesWildcardHost() {
         val server = createExportHttpServer()
 
@@ -250,4 +416,29 @@ class ExportHttpServerTest {
 
     private fun findAvailablePort(): Int =
         ServerSocket(0).use { it.localPort }
+
+    private data class FakeInspectorPayload(
+        val roots: List<FakeInspectorNode>,
+    )
+
+    private data class FakeInspectorNode(
+        val id: String,
+        val className: String,
+        val text: String? = null,
+        val style: ViewTreeStyle? = null,
+        val children: List<FakeInspectorNode> = emptyList(),
+    )
+
+    private class RecordingViewTreeCollector(
+        private val inspector: InspectorSnapshot? = null,
+    ) : ViewTreeCollector {
+        val inspectorQueries = mutableListOf<ViewTreeQuery>()
+
+        override fun captureSnapshot(query: ViewTreeQuery): com.neptunekit.sdk.android.model.ViewTreeSnapshot? = null
+
+        override fun captureInspector(query: ViewTreeQuery): InspectorSnapshot? {
+            inspectorQueries += query
+            return inspector
+        }
+    }
 }
